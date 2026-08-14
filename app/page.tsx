@@ -79,7 +79,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="inline-block border-2 border-foreground bg-card px-4 py-2 text-xs font-bold uppercase tracking-widest shadow-brutal">
-          © 2025 TypeMaster — Keep Practicing
+          © 2026 TypeMaster — Keep Practicing, Build By Ausaf Ul Islam
         </p>
       </footer>
 
