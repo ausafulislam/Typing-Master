@@ -50,7 +50,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-10 max-w-4xl mx-auto w-full">
+      <main id="main-content" className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-10 max-w-4xl mx-auto w-full">
         <div className="flex flex-col items-center gap-6">
           <span className="border-2 border-foreground bg-card px-4 py-1.5 text-xs font-bold uppercase tracking-widest shadow-brutal">
             Type faster. Miss less.
@@ -66,7 +66,7 @@ export default function LandingPage() {
 
         <Button
           onClick={() => setOpen(true)}
-          className="h-auto border-2 border-foreground bg-primary text-primary-foreground text-lg font-black uppercase tracking-wide px-8 py-4 shadow-brutal-lg hover:translate-x-1 hover:translate-y-1 hover:shadow-brutal transition-all"
+          className="h-auto border-2 border-foreground bg-primary text-primary-foreground text-lg font-black uppercase tracking-wide px-8 py-4 shadow-brutal-lg hover:translate-x-1 hover:translate-y-1 hover:shadow-brutal transition-brutal"
         >
           {savedName ? `Continue as ${savedName}` : "Start Typing Test"}
           <ArrowRight className="ml-2 w-5 h-5" />
@@ -102,13 +102,16 @@ export default function LandingPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
+              aria-label="Your name"
+              autoComplete="off"
+              spellCheck={false}
               maxLength={20}
               className="h-12 border-2 border-foreground text-center text-lg font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary"
             />
             <Button
               type="submit"
               disabled={!name.trim()}
-              className="h-12 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase tracking-wide shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+              className="h-12 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase tracking-wide shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
             >
               Start Typing
               <ArrowRight className="ml-2 w-5 h-5" />

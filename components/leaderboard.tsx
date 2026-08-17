@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { getLeaderboard } from "@/app/actions"
-import { Trophy } from "lucide-react"
+import { ChevronLeft, ChevronRight, Trophy } from "lucide-react"
+
+const PAGE_SIZE = 15
 
 interface LeaderboardEntry {
   name: string
@@ -10,29 +12,48 @@ interface LeaderboardEntry {
   accuracy: number
 }
 
+interface LeaderboardData {
+  entries: LeaderboardEntry[]
+  page: number
+  hasMore: boolean
+  error: string | null
+}
+
+const rankLabel = (rank: number) => {
+  if (rank === 1) return "1ST"
+  if (rank === 2) return "2ND"
+  if (rank === 3) return "3RD"
+  return `#${rank}`
+}
+
 export function Leaderboard() {
-  const [data, setData] = useState<LeaderboardEntry[]>([])
+  const [data, setData] = useState<LeaderboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const result = await getLeaderboard()
-        setData(result)
-      } catch (error) {
-        console.error("Failed to load leaderboard", error)
-      } finally {
-        setLoading(false)
-      }
+  const fetchPage = useCallback(async (targetPage: number) => {
+    setLoading(true)
+    try {
+      const result = await getLeaderboard(targetPage)
+      setData(result)
+    } catch {
+      setData({ entries: [], page: targetPage, hasMore: false, error: "Failed to load leaderboard" })
+    } finally {
+      setLoading(false)
     }
-    fetchData()
   }, [])
 
-  const rankLabel = (index: number) => {
-    if (index === 0) return "1ST"
-    if (index === 1) return "2ND"
-    if (index === 2) return "3RD"
-    return `#${index + 1}`
+  useEffect(() => {
+    fetchPage(1)
+  }, [fetchPage])
+
+  const currentPage = data?.page ?? 1
+  const entries = data?.entries ?? []
+  const hasMore = data?.hasMore ?? false
+  const loadError = data?.error ?? null
+
+  const goToPage = (targetPage: number) => {
+    if (targetPage < 1 || targetPage === currentPage || loading) return
+    fetchPage(targetPage)
   }
 
   return (
@@ -60,43 +81,73 @@ export function Leaderboard() {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y-2 divide-foreground/15">
-              {loading ? (
+            <tbody aria-live="polite" aria-busy={loading} className="divide-y-2 divide-foreground/15">
+              {loading && !data ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center font-bold uppercase text-muted-foreground text-sm">
                     Loading leaderboard...
                   </td>
                 </tr>
-              ) : data.length === 0 ? (
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-8 text-center font-bold uppercase text-destructive text-sm">
+                    Failed to load leaderboard
+                  </td>
+                </tr>
+              ) : entries.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center font-bold uppercase text-muted-foreground text-sm">
-                    No scores yet. Be the first!
+                    {currentPage > 1 ? "No more scores on this page" : "No scores yet. Be the first!"}
                   </td>
                 </tr>
               ) : (
-                data.map((user, index) => (
-                  <tr key={index} className="hover:bg-secondary transition-colors">
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span
-                        className={`inline-block border-2 border-foreground px-2 py-0.5 text-xs font-black ${
-                          index < 3 ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-                        }`}
-                      >
-                        {rankLabel(index)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap text-sm font-black text-foreground">{user.name}</td>
-                    <td className="px-5 py-3 whitespace-nowrap text-right text-lg font-black font-mono text-primary">
-                      {user.wpm}
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap text-right text-sm font-bold font-mono text-muted-foreground">
-                      {user.accuracy}%
-                    </td>
-                  </tr>
-                ))
+                entries.map((user, index) => {
+                  const rank = (currentPage - 1) * PAGE_SIZE + index + 1
+                  return (
+                    <tr key={`${rank}-${user.name}`} className="hover:bg-secondary transition-colors">
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <span
+                          className={`inline-block border-2 border-foreground px-2 py-0.5 text-xs font-black ${
+                            rank <= 3 ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+                          }`}
+                        >
+                          {rankLabel(rank)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap text-sm font-black text-foreground">{user.name}</td>
+                      <td className="px-5 py-3 whitespace-nowrap text-right text-lg font-black font-mono text-primary tabular-nums">
+                        {user.wpm}
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap text-right text-sm font-bold font-mono text-muted-foreground tabular-nums">
+                        {user.accuracy}%
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
+        </div>
+        <div className="border-t-2 border-foreground bg-secondary flex items-center justify-between px-4 py-3">
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage <= 1 || loading}
+            className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Prev
+          </button>
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+            {loading ? "Loading..." : `Page ${currentPage}`}
+          </p>
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={!hasMore || loading}
+            className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>

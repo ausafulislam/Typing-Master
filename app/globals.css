@@ -2,40 +2,39 @@
 @import "tw-animate-css";
 
 :root {
-  /* Premium light brutalist palette (5 colors) */
-  --background: oklch(0.96 0.006 260); /* cool paper */
-  --foreground: oklch(0.16 0.02 265); /* near-black ink */
-  --card: oklch(1 0 0); /* pure white */
-  --card-foreground: oklch(0.16 0.02 265);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0.02 265);
-  --primary: oklch(0.52 0.23 264); /* electric cobalt */
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.92 0.01 260);
-  --secondary-foreground: oklch(0.16 0.02 265);
-  --muted: oklch(0.92 0.01 260);
-  --muted-foreground: oklch(0.42 0.02 265);
-  --accent: oklch(0.52 0.23 264);
-  --accent-foreground: oklch(0.99 0 0);
-  --destructive: oklch(0.58 0.24 27);
-  --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.16 0.02 265); /* hard black borders */
-  --input: oklch(0.16 0.02 265);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.52 0.23 264);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
   --ring: oklch(0.52 0.23 264);
-  --chart-1: oklch(0.52 0.23 264);
-  --chart-2: oklch(0.58 0.24 27);
-  --chart-3: oklch(0.75 0.15 85);
-  --chart-4: oklch(0.6 0.15 160);
-  --chart-5: oklch(0.55 0.2 320);
-  --radius: 0rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.16 0.02 265);
-  --sidebar-primary: oklch(0.52 0.23 264);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.92 0.01 260);
-  --sidebar-accent-foreground: oklch(0.16 0.02 265);
-  --sidebar-border: oklch(0.16 0.02 265);
-  --sidebar-ring: oklch(0.52 0.23 264);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 @theme inline {
@@ -65,10 +64,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: 0rem;
-  --radius-md: 0rem;
-  --radius-lg: 0rem;
-  --radius-xl: 0rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -86,17 +85,48 @@
   body {
     @apply bg-background text-foreground;
   }
+  html {
+    color-scheme: light;
+  }
+  a,
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--ring) 35%, transparent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
 }
 
-/* Brutalist utilities: hard offset shadows */
 @utility shadow-brutal {
   box-shadow: 4px 4px 0 0 var(--foreground);
 }
+
 @utility shadow-brutal-lg {
   box-shadow: 8px 8px 0 0 var(--foreground);
 }
+
 @utility shadow-brutal-primary {
-  box-shadow: 6px 6px 0 0 var(--primary);
+  box-shadow: 4px 4px 0 0 var(--primary);
+}
+
+@utility transition-brutal {
+  transition-property: translate, box-shadow, background-color, color, border-color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@utility transition-brutal-fast {
+  transition-property: translate, box-shadow, background-color, color, border-color, opacity;
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes blink {
@@ -121,6 +151,18 @@
   background: var(--secondary);
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--foreground);
+  background: var(--border);
   border: 2px solid var(--secondary);
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

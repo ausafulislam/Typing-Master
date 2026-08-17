@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, BarChart3, Loader2, Check, ArrowLeft, Pencil, Volume2, VolumeX, Trophy } from "lucide-react"
+import { RotateCcw, BarChart3, Loader2, Check, ArrowLeft, Pencil, Volume2, VolumeX, Trophy, Keyboard } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
@@ -45,6 +45,8 @@ export default function TypingGame() {
   const [hasSaved, setHasSaved] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
+  const [isTouchDevice, setIsTouchDevice] = useState<boolean | null>(null)
 
   const soundOnRef = useRef(true)
 
@@ -61,6 +63,7 @@ export default function TypingGame() {
     setErrorFlash(false)
     setShowResults(false)
     setHasSaved(false)
+    setSaveFeedback(null)
   }, [timeLimit])
 
   useEffect(() => {
@@ -71,6 +74,10 @@ export default function TypingGame() {
       setSoundOn(false)
       soundOnRef.current = false
     }
+  }, [])
+
+  useEffect(() => {
+    setIsTouchDevice(window.matchMedia("(hover: none) and (pointer: coarse)").matches)
   }, [])
 
   useEffect(() => {
@@ -155,22 +162,67 @@ export default function TypingGame() {
     setNickname(value)
     localStorage.setItem(NAME_KEY, value.trim())
     setHasSaved(false)
+    setSaveFeedback(null)
   }
 
   const handleSaveSession = async () => {
     if (!nickname.trim()) return
     setIsSaving(true)
+    setSaveFeedback(null)
     try {
       const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm, accuracy, errors })
       if (result.success) {
-        setHasSaved(true)
-        localStorage.setItem(NAME_KEY, nickname.trim())
+        if (result.saved) {
+          setHasSaved(true)
+          localStorage.setItem(NAME_KEY, nickname.trim())
+        } else {
+          setSaveFeedback("Your best score is higher — this run wasn't saved.")
+        }
+      } else {
+        setSaveFeedback(result.error || "Failed to save score. Please try again.")
       }
     } catch (error) {
       console.error("Failed to save:", error)
+      setSaveFeedback("Failed to save score. Please try again.")
     } finally {
       setIsSaving(false)
     }
+  }
+
+  if (isTouchDevice === null) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="border-2 border-foreground bg-card px-6 py-4 shadow-brutal text-center">
+          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isTouchDevice) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-card border-2 border-foreground shadow-brutal-lg p-8 flex flex-col items-center gap-6 text-center">
+          <div className="bg-foreground text-background p-3">
+            <Keyboard className="w-10 h-10" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Keyboard Required</h1>
+            <p className="text-muted-foreground font-medium leading-relaxed">
+              TypeMaster is a keyboard-only typing game and can&apos;t be played on touch devices. Open it on a
+              computer with a physical keyboard to start typing.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 border-2 border-foreground bg-primary text-primary-foreground px-5 py-2.5 text-xs font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   const liveStats = [
@@ -181,14 +233,14 @@ export default function TypingGame() {
   ]
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-6 lg:p-8">
+    <div id="main-content" className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-8 sm:gap-10">
         {/* Header */}
         <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Link
               href="/"
-              className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+              className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
               aria-label="Back to home"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -210,7 +262,7 @@ export default function TypingGame() {
               onClick={toggleSound}
               aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
               aria-pressed={soundOn}
-              className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all ${
+              className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
                 soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
               }`}
             >
@@ -227,7 +279,8 @@ export default function TypingGame() {
                 <Button
                   key={opt}
                   onClick={() => changeTimeLimit(opt)}
-                  className={`h-11 px-3.5 border-2 border-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all ${
+                  aria-pressed={timeLimit === opt}
+                  className={`h-11 px-3.5 border-2 border-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
                     timeLimit === opt
                       ? "bg-primary text-primary-foreground"
                       : "bg-card text-foreground hover:bg-secondary"
@@ -292,7 +345,7 @@ export default function TypingGame() {
         <div className="flex justify-center gap-3 flex-wrap">
           <Button
             onClick={resetGame}
-            className="h-11 gap-2 border-2 border-foreground bg-card text-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none hover:bg-secondary transition-all"
+            className="h-11 gap-2 border-2 border-foreground bg-card text-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none hover:bg-secondary transition-brutal"
           >
             <RotateCcw className="w-4 h-4" />
             Restart
@@ -300,7 +353,7 @@ export default function TypingGame() {
           {isFinished && !showResults && (
             <Button
               onClick={() => setShowResults(true)}
-              className="h-11 gap-2 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+              className="h-11 gap-2 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
             >
               <BarChart3 className="w-4 h-4" />
               View Results
@@ -319,7 +372,7 @@ export default function TypingGame() {
                   return (
                     <div
                       key={key}
-                      className={`w-[8.5vw] h-[8.5vw] max-w-14 max-h-14 sm:w-14 sm:h-14 flex items-center justify-center border-2 font-mono text-sm sm:text-lg font-black transition-all duration-75 ${
+                      className={`w-[8.5vw] h-[8.5vw] max-w-14 max-h-14 sm:w-14 sm:h-14 flex items-center justify-center border-2 font-mono text-sm sm:text-lg font-black transition-brutal-fast ${
                         isPressed
                           ? `translate-x-0.5 translate-y-0.5 border-background ${
                               isError
@@ -337,7 +390,7 @@ export default function TypingGame() {
             ))}
             <div className="flex justify-center pt-1">
               <div
-                className={`w-2/3 max-w-96 h-11 sm:h-14 flex items-center justify-center border-2 font-mono text-[11px] font-black uppercase tracking-[0.3em] transition-all duration-75 ${
+                className={`w-2/3 max-w-96 h-11 sm:h-14 flex items-center justify-center border-2 font-mono text-[11px] font-black uppercase tracking-[0.3em] transition-brutal-fast ${
                   pressedKey === "Space"
                     ? `translate-x-0.5 translate-y-0.5 border-background ${
                         errorFlash
@@ -385,8 +438,11 @@ export default function TypingGame() {
                   onChange={(e) => handleNameChange(e.target.value)}
                   onBlur={() => setEditingName(false)}
                   placeholder="Your name"
+                  aria-label="Your name"
+                  autoComplete="off"
+                  spellCheck={false}
                   maxLength={20}
-                  className="h-8 border-0 p-0 text-lg font-black focus-visible:ring-0"
+                  className="h-8 border-0 p-0 text-lg font-black"
                 />
               ) : (
                 <div className="flex flex-col gap-1">
@@ -405,11 +461,17 @@ export default function TypingGame() {
               </button>
             </div>
 
+            {saveFeedback && (
+              <p role="status" aria-live="polite" className="text-center text-xs font-bold uppercase tracking-widest text-destructive">
+                {saveFeedback}
+              </p>
+            )}
+
             <div className="flex gap-3">
               <Button
                 onClick={handleSaveSession}
                 disabled={isSaving || hasSaved || !nickname.trim()}
-                className="flex-1 h-11 border-2 border-foreground bg-foreground text-background font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-60"
+                className="flex-1 h-11 border-2 border-foreground bg-foreground text-background font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-60"
               >
                 {isSaving ? (
                   <>
@@ -427,7 +489,7 @@ export default function TypingGame() {
               </Button>
               <Button
                 onClick={resetGame}
-                className="flex-1 h-11 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+                className="flex-1 h-11 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Try Again
@@ -437,7 +499,7 @@ export default function TypingGame() {
             {hasSaved && (
               <Link
                 href="/"
-                className="flex items-center justify-center gap-2 border-2 border-foreground bg-secondary px-4 py-2.5 text-xs font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+                className="flex items-center justify-center gap-2 border-2 border-foreground bg-secondary px-4 py-2.5 text-xs font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
               >
                 <Trophy className="w-4 h-4" />
                 View Leaderboard
