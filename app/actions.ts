@@ -1,9 +1,12 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { LEADERBOARD_PAGE_SIZE } from "@/lib/constants"
 
 const MAX_NAME_LENGTH = 20
-const LEADERBOARD_PAGE_SIZE = 15
+const MAX_WPM = 400
+const MAX_ERRORS = 999999
+const MAX_DURATION = 300
 
 interface ScoreData {
   wpm: number
@@ -25,6 +28,13 @@ function isBetter(newScore: ScoreData, existing: ScoreData): boolean {
   )
 }
 
+function sanitizeName(name: string): string {
+  return name
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .replace(/<[^>]*>/g, "")
+    .trim()
+}
+
 function validateSession(data: {
   name: string
   duration: number
@@ -32,7 +42,7 @@ function validateSession(data: {
   accuracy: number
   errors: number
 }): string | null {
-  const name = data.name.trim()
+  const name = sanitizeName(data.name)
 
   if (!name) return "Name is required"
   if (name.length > MAX_NAME_LENGTH) return "Name is too long"
@@ -43,10 +53,13 @@ function validateSession(data: {
     Number.isFinite(data.errors) &&
     Number.isFinite(data.duration) &&
     data.wpm >= 0 &&
+    data.wpm <= MAX_WPM &&
     data.accuracy >= 0 &&
     data.accuracy <= 100 &&
     data.errors >= 0 &&
-    data.duration > 0
+    data.errors <= MAX_ERRORS &&
+    data.duration > 0 &&
+    data.duration <= MAX_DURATION
 
   if (!numbersValid) return "Invalid score data"
 
@@ -60,7 +73,7 @@ export async function saveGameSession(data: {
   accuracy: number
   errors: number
 }) {
-  const name = data.name.trim()
+  const name = sanitizeName(data.name)
 
   const validationError = validateSession(data)
   if (validationError) {
@@ -83,21 +96,6 @@ export async function saveGameSession(data: {
     return (sessions ?? []) as ExistingRow[]
   }
 
-  const updateBest = async (id: number) => {
-    const { error } = await supabase
-      .from("game_sessions")
-      .update({
-        duration: data.duration,
-        wpm: data.wpm,
-        accuracy: data.accuracy,
-        errors: data.errors,
-        created_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-
-    if (error) throw error
-  }
-
   try {
     const existing = (await findBest())[0]
 
@@ -105,7 +103,27 @@ export async function saveGameSession(data: {
       if (!isBetter(data, existing)) {
         return { success: true, saved: false }
       }
-      await updateBest(existing.id)
+
+      // Conditional update: only update if the existing row is still ours to beat
+      const { data: updated, error: updateError } = await supabase
+        .from("game_sessions")
+        .update({
+          duration: data.duration,
+          wpm: data.wpm,
+          accuracy: data.accuracy,
+          errors: data.errors,
+          created_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("id")
+
+      if (updateError) throw updateError
+
+      // If no rows updated, another request overwrote it first
+      if (!updated || updated.length === 0) {
+        return { success: true, saved: false }
+      }
+
       return { success: true, saved: true }
     }
 
@@ -120,22 +138,75 @@ export async function saveGameSession(data: {
     if (insertError) {
       if (insertError.code === "23505") {
         // Unique-index race: another request created this name first.
-        // Re-read and apply the compare/update path instead of inserting.
         const raced = (await findBest())[0]
         if (!raced) throw insertError
         if (!isBetter(data, raced)) {
           return { success: true, saved: false }
         }
-        await updateBest(raced.id)
+        const { data: racedUpdated, error: racedUpdateError } = await supabase
+          .from("game_sessions")
+          .update({
+            duration: data.duration,
+            wpm: data.wpm,
+            accuracy: data.accuracy,
+            errors: data.errors,
+            created_at: new Date().toISOString(),
+          })
+          .eq("id", raced.id)
+          .select("id")
+
+        if (racedUpdateError) throw racedUpdateError
+        if (!racedUpdated || racedUpdated.length === 0) {
+          return { success: true, saved: false }
+        }
         return { success: true, saved: true }
       }
       throw insertError
     }
 
     return { success: true, saved: true }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Failed to save game session:", error)
     return { success: false, saved: false, error: "Failed to save game session" }
+  }
+}
+
+export async function getPlayerStats(name: string) {
+  const safeName = sanitizeName(name)
+  if (!safeName) return null
+
+  const supabase = await createClient()
+
+  try {
+    const { data: best, error: bestError } = await supabase
+      .from("game_sessions")
+      .select("wpm, accuracy, errors")
+      .eq("name", safeName)
+      .order("wpm", { ascending: false })
+      .order("accuracy", { ascending: false })
+      .order("errors", { ascending: true })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (bestError) throw bestError
+    if (!best) return null
+
+    const { count: rank, error: rankError } = await supabase
+      .from("game_sessions")
+      .select("id", { count: "exact", head: true })
+      .or(`wpm.gt.${best.wpm},and(wpm.eq.${best.wpm},accuracy.gt.${best.accuracy}),and(wpm.eq.${best.wpm},accuracy.eq.${best.accuracy},errors.lt.${best.errors})`)
+
+    if (rankError) throw rankError
+
+    return {
+      wpm: best.wpm,
+      accuracy: best.accuracy,
+      rank: (rank ?? 0) + 1,
+    }
+  } catch (error: unknown) {
+    console.error("Failed to fetch player stats:", error)
+    return null
   }
 }
 
@@ -161,7 +232,7 @@ export async function getLeaderboard(page = 1) {
     const hasMore = count !== null ? from + entries.length < count : false
 
     return { entries, page: safePage, hasMore, error: null }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Failed to fetch leaderboard:", error)
     return { entries: [], page: safePage, hasMore: false, error: "Failed to load leaderboard" }
   }

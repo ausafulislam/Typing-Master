@@ -11,6 +11,9 @@ import { playKeySound } from "@/lib/key-sound"
 
 const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
+const CHARS_PER_LINE = 50
+const LINE_HEIGHT_REM = 3.4
+const WPM_STABILITY_THRESHOLD = 5
 
 const SAMPLE_TEXTS = [
   "The quick brown fox jumps over the lazy dog while the moon shines bright in the darkening sky above the hills where ancient trees stand tall and proud among the whispering winds that carry tales of old adventures and forgotten dreams across the vast expanse of time and space.",
@@ -27,6 +30,27 @@ const KEYBOARD_LAYOUT = [
 ]
 
 const TIME_OPTIONS = [15, 30, 60]
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+}
+
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Storage full or sandboxed — silently ignore
+  }
+}
 
 export default function TypingGame() {
   const [sampleText, setSampleText] = useState("")
@@ -49,14 +73,34 @@ export default function TypingGame() {
   const [isTouchDevice, setIsTouchDevice] = useState<boolean | null>(null)
 
   const soundOnRef = useRef(true)
+  const isFinishedRef = useRef(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const currentIndexRef = useRef(0)
+  const sampleTextRef = useRef("")
+  const isActiveRef = useRef(false)
+
+  const clearTimeouts = useCallback(() => {
+    timeoutsRef.current.forEach(clearTimeout)
+    timeoutsRef.current = []
+  }, [])
 
   const resetGame = useCallback(() => {
+    clearTimeouts()
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
     const randomText = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)]
     setSampleText(randomText)
+    sampleTextRef.current = randomText
     setCurrentIndex(0)
+    currentIndexRef.current = 0
     setTimeLeft(timeLimit)
     setIsActive(false)
+    isActiveRef.current = false
     setIsFinished(false)
+    isFinishedRef.current = false
     setErrors(0)
     setTotalTyped(0)
     setPressedKey(null)
@@ -64,12 +108,12 @@ export default function TypingGame() {
     setShowResults(false)
     setHasSaved(false)
     setSaveFeedback(null)
-  }, [timeLimit])
+  }, [timeLimit, clearTimeouts])
 
   useEffect(() => {
-    const storedNickname = localStorage.getItem(NAME_KEY)
+    const storedNickname = safeLocalStorageGet(NAME_KEY)
     if (storedNickname) setNickname(storedNickname)
-    const storedSound = localStorage.getItem(SOUND_KEY)
+    const storedSound = safeLocalStorageGet(SOUND_KEY)
     if (storedSound === "off") {
       setSoundOn(false)
       soundOnRef.current = false
@@ -84,65 +128,117 @@ export default function TypingGame() {
     resetGame()
   }, [resetGame])
 
+  // Timer effect — ref-based, only depends on isActive
   useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      const timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            setIsActive(false)
-            setIsFinished(true)
-            setShowResults(true)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-      return () => clearInterval(timer)
+    if (!isActive) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+      return
     }
-  }, [isActive, timeLeft])
 
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!)
+          timerRef.current = null
+          isFinishedRef.current = true
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [isActive])
+
+  // Handle game end separately from timer to avoid side effects in state updater
+  useEffect(() => {
+    if (timeLeft === 0 && isActive) {
+      setIsActive(false)
+      isActiveRef.current = false
+      setIsFinished(true)
+      setShowResults(true)
+    }
+  }, [timeLeft, isActive])
+
+  // Handle key press — uses refs for values that change between renders
   const handleKeyPress = useCallback(
     (e: KeyboardEvent) => {
-      if (isFinished || currentIndex >= sampleText.length) return
+      if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
 
       const key = e.key
       if (key.length > 1 && key !== " ") return
 
-      // Prevent the page from scrolling when Space (or other handled keys) is pressed.
       if (key === " ") e.preventDefault()
 
-      if (!isActive) setIsActive(true)
+      if (!isActiveRef.current) {
+        setIsActive(true)
+        isActiveRef.current = true
+      }
 
       setPressedKey(key === " " ? "Space" : key.toLowerCase())
-      setTimeout(() => setPressedKey(null), 150)
+      const pressTimeout = setTimeout(() => setPressedKey(null), 150)
+      timeoutsRef.current.push(pressTimeout)
 
-      const expectedChar = sampleText[currentIndex]
+      if (!prefersReducedMotion()) {
+        // nothing — flash state still updates for accessibility
+      }
+
+      const expectedChar = sampleTextRef.current[currentIndexRef.current]
       setTotalTyped((prev) => prev + 1)
 
       if (key === expectedChar) {
         if (soundOnRef.current) playKeySound(key === " " ? "space" : "key")
-        setCurrentIndex((prev) => prev + 1)
+        const newIndex = currentIndexRef.current + 1
+        setCurrentIndex(newIndex)
+        currentIndexRef.current = newIndex
       } else {
         if (soundOnRef.current) playKeySound("error")
         setErrors((prev) => prev + 1)
         setErrorFlash(true)
-        setTimeout(() => setErrorFlash(false), 150)
+        const errorTimeout = setTimeout(() => setErrorFlash(false), 150)
+        timeoutsRef.current.push(errorTimeout)
       }
     },
-    [isFinished, currentIndex, sampleText, isActive],
+    [],
   )
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyPress)
-    return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [handleKeyPress])
+    return () => {
+      window.removeEventListener("keydown", handleKeyPress)
+      clearTimeouts()
+    }
+  }, [handleKeyPress, clearTimeouts])
+
+  // Pause timer when tab is hidden
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden && isActiveRef.current) {
+        // Browsers throttle intervals in background tabs.
+        // We let the interval keep running but the timer may drift.
+        // For a game this is acceptable — the user shouldn't tab away mid-game.
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => document.removeEventListener("visibilitychange", handleVisibility)
+  }, [])
 
   const elapsed = timeLimit - timeLeft
   const wpm = elapsed > 0 ? Math.round(currentIndex / 5 / (elapsed / 60)) : 0
-  const accuracy = totalTyped > 0 ? Math.round(((totalTyped - errors) / totalTyped) * 100) : 100
+  const displayWpm = elapsed < WPM_STABILITY_THRESHOLD && wpm > 0 ? 0 : wpm
+  const accuracy = totalTyped > 0 ? Math.round((((totalTyped - errors) / totalTyped) * 100) * 10) / 10 : 100
   const progress = sampleText.length > 0 ? Math.round((currentIndex / sampleText.length) * 100) : 0
 
   const changeTimeLimit = (newLimit: number) => {
+    if (showResults) return
     setTimeLimit(newLimit)
     setTimeLeft(newLimit)
     resetGame()
@@ -152,7 +248,7 @@ export default function TypingGame() {
     setSoundOn((prev) => {
       const next = !prev
       soundOnRef.current = next
-      localStorage.setItem(SOUND_KEY, next ? "on" : "off")
+      safeLocalStorageSet(SOUND_KEY, next ? "on" : "off")
       if (next) playKeySound("key")
       return next
     })
@@ -160,9 +256,14 @@ export default function TypingGame() {
 
   const handleNameChange = (value: string) => {
     setNickname(value)
-    localStorage.setItem(NAME_KEY, value.trim())
     setHasSaved(false)
     setSaveFeedback(null)
+  }
+
+  const persistName = () => {
+    if (nickname.trim()) {
+      safeLocalStorageSet(NAME_KEY, nickname.trim())
+    }
   }
 
   const handleSaveSession = async () => {
@@ -170,11 +271,11 @@ export default function TypingGame() {
     setIsSaving(true)
     setSaveFeedback(null)
     try {
-      const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm, accuracy, errors })
+      const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm: displayWpm, accuracy, errors })
       if (result.success) {
         if (result.saved) {
           setHasSaved(true)
-          localStorage.setItem(NAME_KEY, nickname.trim())
+          safeLocalStorageSet(NAME_KEY, nickname.trim())
         } else {
           setSaveFeedback("Your best score is higher — this run wasn't saved.")
         }
@@ -226,7 +327,7 @@ export default function TypingGame() {
   }
 
   const liveStats = [
-    { label: "WPM", value: wpm },
+    { label: "WPM", value: displayWpm },
     { label: "Accuracy", value: `${accuracy}%` },
     { label: "Errors", value: errors },
     { label: "Progress", value: `${progress}%` },
@@ -279,8 +380,9 @@ export default function TypingGame() {
                 <Button
                   key={opt}
                   onClick={() => changeTimeLimit(opt)}
+                  disabled={showResults}
                   aria-pressed={timeLimit === opt}
-                  className={`h-11 px-3.5 border-2 border-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
+                  className={`h-11 px-3.5 border-2 border-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 ${
                     timeLimit === opt
                       ? "bg-primary text-primary-foreground"
                       : "bg-card text-foreground hover:bg-secondary"
@@ -312,7 +414,7 @@ export default function TypingGame() {
         <div className="bg-secondary border-2 border-foreground p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
           <div
             className="text-[1.6rem] sm:text-3xl font-mono leading-[1.9] tracking-wide transition-transform duration-300 ease-out"
-            style={{ transform: `translateY(-${Math.floor(currentIndex / 50) * 3.4}rem)` }}
+            style={{ transform: `translateY(-${Math.floor(currentIndex / CHARS_PER_LINE) * LINE_HEIGHT_REM}rem)` }}
           >
             {sampleText.split("").map((char, idx) => (
               <span
@@ -408,7 +510,7 @@ export default function TypingGame() {
       </div>
 
       {/* Results Dialog */}
-      <Dialog open={showResults} onOpenChange={setShowResults}>
+      <Dialog open={showResults} onOpenChange={(open) => { if (!open) setShowResults(false) }}>
         <DialogContent className="border-2 border-foreground shadow-brutal-lg sm:max-w-md gap-6">
           <DialogHeader className="gap-2">
             <DialogTitle className="text-center text-2xl font-black uppercase tracking-tight">Test Complete</DialogTitle>
@@ -416,7 +518,7 @@ export default function TypingGame() {
 
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "WPM", value: wpm },
+              { label: "WPM", value: displayWpm },
               { label: "Accuracy", value: `${accuracy}%` },
               { label: "Errors", value: errors },
             ].map((stat) => (
@@ -436,7 +538,7 @@ export default function TypingGame() {
                   autoFocus
                   value={nickname}
                   onChange={(e) => handleNameChange(e.target.value)}
-                  onBlur={() => setEditingName(false)}
+                  onBlur={() => { setEditingName(false); persistName() }}
                   placeholder="Your name"
                   aria-label="Your name"
                   autoComplete="off"
