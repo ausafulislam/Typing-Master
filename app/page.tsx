@@ -2,16 +2,23 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Keyboard, ArrowRight, Github, Star } from "lucide-react"
+import { Keyboard, ArrowRight, Github, Star, User } from "lucide-react"
+import Link from "next/link"
 import { Leaderboard } from "@/components/leaderboard"
-import { getPlayerStats } from "./actions"
+import { getPlayerStats, checkNameExists } from "./actions"
 
 const NAME_KEY = "typing-game-nickname"
+const NAME_SUFFIXES = ["Pro", "Speed", "Ninja", "Turbo", "Ace", "X", "Master", "Go", "God", "Elite", "Blitz", "Rapid"]
+
+function generateSuggestions(name: string): string[] {
+  const shuffled = [...NAME_SUFFIXES].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, 3).map((suffix) => `${name}-${suffix}`)
+}
 
 interface PlayerStats {
   wpm: number
@@ -40,6 +47,11 @@ export default function LandingPage() {
   const [savedName, setSavedName] = useState<string | null>(() => safeGetItem(NAME_KEY))
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [stars, setStars] = useState<number | null>(null)
+  const [nameError, setNameError] = useState(false)
+  const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
+  const [checkingName, setCheckingName] = useState(false)
+  const [existingPlayerStats, setExistingPlayerStats] = useState<PlayerStats | null>(null)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const stored = safeGetItem(NAME_KEY)
@@ -72,6 +84,62 @@ export default function LandingPage() {
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+    const current = name.trim()
+    if (!current || current.length < 2) {
+      setNameError(false)
+      setNameSuggestions([])
+      setExistingPlayerStats(null)
+      return
+    }
+    let cancelled = false
+    setCheckingName(true)
+    checkNameExists(current).then((exists) => {
+      if (cancelled) return
+      setNameError(exists)
+      setNameSuggestions(exists ? generateSuggestions(current) : [])
+      if (exists) {
+        getPlayerStats(current).then((playerStats) => {
+          if (!cancelled) setExistingPlayerStats(playerStats)
+        })
+      } else {
+        setExistingPlayerStats(null)
+      }
+      setCheckingName(false)
+    })
+    return () => { cancelled = true }
+  }, [open])
+
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    const current = name.trim()
+    if (!current || current.length < 2) {
+      setNameError(false)
+      setNameSuggestions([])
+      setExistingPlayerStats(null)
+      return
+    }
+    setCheckingName(true)
+    debounceTimer.current = setTimeout(() => {
+      checkNameExists(current).then((exists) => {
+        setNameError(exists)
+        setNameSuggestions(exists ? generateSuggestions(current) : [])
+        if (exists) {
+          getPlayerStats(current).then((playerStats) => {
+            setExistingPlayerStats(playerStats)
+          })
+        } else {
+          setExistingPlayerStats(null)
+        }
+        setCheckingName(false)
+      })
+    }, 400)
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    }
+  }, [name])
+
   const startGame = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = name.trim()
@@ -92,6 +160,13 @@ export default function LandingPage() {
             <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">TypeMaster</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+            >
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Profile</span>
+            </Link>
             <a
               href="https://github.com/ausafulislam/Typing-Master"
               target="_blank"
@@ -209,16 +284,24 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex justify-between items-center">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col sm:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <div className="bg-primary text-primary-foreground border-2 border-foreground p-1">
               <Keyboard className="w-3.5 h-3.5" />
             </div>
             <span className="text-xs sm:text-sm font-black uppercase tracking-tight">TypeMaster</span>
           </div>
-          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            &copy; 2026 Ausaf Ul Islam
-          </p>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/verify"
+              className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Verify Certificate
+            </Link>
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              &copy; 2026 Ausaf Ul Islam
+            </p>
+          </div>
         </div>
       </footer>
 
@@ -245,14 +328,53 @@ export default function LandingPage() {
               autoComplete="off"
               spellCheck={false}
               maxLength={20}
-              className="h-11 sm:h-12 border-2 border-foreground text-center text-base sm:text-lg font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary"
+              className={`h-11 sm:h-12 border-2 text-center text-base sm:text-lg font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary ${
+                nameError
+                  ? "border-blue-500 focus-visible:border-blue-500"
+                  : "border-foreground"
+              }`}
             />
+            {nameError && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-bold text-blue-600 text-center">
+                  This name has existing scores. Your best score will be updated.
+                </p>
+                {existingPlayerStats && (
+                  <div className="flex justify-center gap-4">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Best: <span className="text-foreground">{existingPlayerStats.wpm} WPM</span>
+                    </span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Accuracy: <span className="text-foreground">{existingPlayerStats.accuracy}%</span>
+                    </span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Rank: <span className="text-foreground">#{existingPlayerStats.rank}</span>
+                    </span>
+                  </div>
+                )}
+                <div className="flex flex-wrap justify-center gap-2">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground self-center">
+                    Or try:
+                  </span>
+                  {nameSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setName(suggestion)}
+                      className="border-2 border-foreground bg-secondary px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <Button
               type="submit"
               disabled={!name.trim()}
               className="h-11 sm:h-12 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase tracking-wide shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
             >
-              Start Typing
+              {checkingName ? "Checking..." : "Start Typing"}
               <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
           </form>

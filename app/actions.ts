@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { LEADERBOARD_PAGE_SIZE } from "@/lib/constants"
+import { LEADERBOARD_PAGE_SIZE, CERTIFICATE_TIERS, generateCertificateId, type CertificateTier } from "@/lib/constants"
 
 const MAX_NAME_LENGTH = 20
 const MAX_WPM = 400
@@ -72,8 +72,10 @@ export async function saveGameSession(data: {
   wpm: number
   accuracy: number
   errors: number
+  textMode?: string
 }) {
   const name = sanitizeName(data.name)
+  const textMode = data.textMode || "normal"
 
   const validationError = validateSession(data)
   if (validationError) {
@@ -81,6 +83,16 @@ export async function saveGameSession(data: {
   }
 
   const supabase = await createClient()
+
+  // Insert into game_history (every game)
+  await supabase.from("game_history").insert({
+    name,
+    text_mode: textMode,
+    duration: data.duration,
+    wpm: data.wpm,
+    accuracy: data.accuracy,
+    errors: data.errors,
+  })
 
   const findBest = async () => {
     const { data: sessions, error } = await supabase
@@ -171,6 +183,28 @@ export async function saveGameSession(data: {
   }
 }
 
+export async function checkNameExists(name: string): Promise<boolean> {
+  const safeName = sanitizeName(name)
+  if (!safeName) return false
+
+  const supabase = await createClient()
+
+  try {
+    const { data, error } = await supabase
+      .from("game_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("name", safeName)
+      .limit(1)
+
+    if (error) throw error
+
+    return (data ?? []).length > 0
+  } catch (error: unknown) {
+    console.error("Failed to check name:", error)
+    return false
+  }
+}
+
 export async function getPlayerStats(name: string) {
   const safeName = sanitizeName(name)
   if (!safeName) return null
@@ -235,5 +269,107 @@ export async function getLeaderboard(page = 1) {
   } catch (error: unknown) {
     console.error("Failed to fetch leaderboard:", error)
     return { entries: [], page: safePage, hasMore: false, error: "Failed to load leaderboard" }
+  }
+}
+
+export async function awardCertificates(name: string, wpm: number, accuracy: number) {
+  const supabase = await createClient()
+  const newCerts: { tier: string; id: string }[] = []
+
+  try {
+    const { data: existing } = await supabase
+      .from("certificates")
+      .select("tier")
+      .eq("name", name) as { data: { tier: string }[] | null }
+
+    const earnedTiers = new Set((existing ?? []).map((r: { tier: string }) => r.tier))
+
+    for (const tier of CERTIFICATE_TIERS) {
+      if (earnedTiers.has(tier.name)) continue
+      if (wpm >= tier.minWpm && accuracy >= tier.minAccuracy) {
+        const certId = generateCertificateId(tier, wpm, accuracy)
+        const { error } = await supabase.from("certificates").insert({
+          id: certId,
+          name,
+          tier: tier.name,
+          wpm,
+          accuracy,
+        })
+        if (!error) {
+          newCerts.push({ tier: tier.name, id: certId })
+        }
+      }
+    }
+
+    return newCerts
+  } catch (error: unknown) {
+    console.error("Failed to award certificates:", error)
+    return []
+  }
+}
+
+export async function verifyCertificate(id: string) {
+  const supabase = await createClient()
+  const cleanId = id.trim().toUpperCase()
+
+  try {
+    const { data, error } = await supabase
+      .from("certificates")
+      .select("id, name, tier, wpm, accuracy, created_at")
+      .eq("id", cleanId)
+      .maybeSingle() as { data: { id: string; name: string; tier: string; wpm: number; accuracy: number; created_at: string } | null; error: unknown }
+
+    if (error) throw error
+    if (!data) return null
+
+    return {
+      valid: true,
+      id: data.id,
+      name: data.name,
+      tier: data.tier,
+      wpm: data.wpm,
+      accuracy: data.accuracy,
+      date: data.created_at,
+    }
+  } catch (error: unknown) {
+    console.error("Failed to verify certificate:", error)
+    return null
+  }
+}
+
+export async function getPlayerCertificates(name: string) {
+  const supabase = await createClient()
+
+  try {
+    const { data, error } = await supabase
+      .from("certificates")
+      .select("id, tier, wpm, accuracy, created_at")
+      .eq("name", name)
+      .order("created_at", { ascending: false }) as { data: { id: string; tier: string; wpm: number; accuracy: number; created_at: string }[] | null; error: unknown }
+
+    if (error) throw error
+    return data ?? []
+  } catch (error: unknown) {
+    console.error("Failed to fetch certificates:", error)
+    return []
+  }
+}
+
+export async function getPlayerGameHistory(name: string) {
+  const supabase = await createClient()
+
+  try {
+    const { data, error } = await supabase
+      .from("game_history")
+      .select("id, text_mode, duration, wpm, accuracy, errors, created_at")
+      .eq("name", name)
+      .order("created_at", { ascending: false })
+      .limit(100) as { data: { id: number; text_mode: string; duration: number; wpm: number; accuracy: number; errors: number; created_at: string }[] | null; error: unknown }
+
+    if (error) throw error
+    return data ?? []
+  } catch (error: unknown) {
+    console.error("Failed to fetch game history:", error)
+    return []
   }
 }

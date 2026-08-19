@@ -6,7 +6,7 @@ import { RotateCcw, BarChart3, Loader2, Check, ArrowLeft, Pencil, Volume2, Volum
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
-import { saveGameSession } from "../actions"
+import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
 
 const NAME_KEY = "typing-game-nickname"
@@ -15,13 +15,38 @@ const CHARS_PER_LINE = 50
 const LINE_HEIGHT_REM = 3.4
 const WPM_STABILITY_THRESHOLD = 5
 
-const SAMPLE_TEXTS = [
-  "The quick brown fox jumps over the lazy dog while the moon shines bright in the darkening sky above the hills where ancient trees stand tall and proud among the whispering winds that carry tales of old adventures and forgotten dreams across the vast expanse of time and space.",
-  "In the heart of the forest where shadows dance between towering oaks and pines there lives a community of creatures both large and small who work together to maintain the delicate balance of nature through seasons of change and growth where every leaf and branch tells a story of survival.",
-  "Technology advances at an incredible pace bringing new innovations and discoveries that reshape our world and challenge our understanding of what is possible as we venture into uncharted territories of science and exploration seeking answers to questions that have puzzled humanity for generations.",
-  "Music flows through the air like liquid gold touching hearts and souls with melodies that transcend language and culture bringing people together in moments of pure joy and celebration where rhythm and harmony create a universal language that speaks to the deepest parts of our experience.",
-  "The ocean waves crash against the rocky shore in an eternal dance of power and grace where countless mysteries lie hidden beneath the surface waiting to be discovered by brave explorers who dare to venture into the depths where light fades and pressure builds creating an alien world.",
-]
+const SAMPLE_TEXTS = {
+  normal: [
+    "the quick brown fox jumps over the lazy dog while the moon shines bright in the darkening sky above the hills where ancient trees stand tall and proud among the whispering winds that carry tales of old adventures and forgotten dreams across the vast expanse of time and space",
+    "in the heart of the forest where shadows dance between towering oaks and pines there lives a community of creatures both large and small who work together to maintain the delicate balance of nature through seasons of change and growth where every leaf and branch tells a story of survival",
+    "technology advances at an incredible pace bringing new innovations and discoveries that reshape our world and challenge our understanding of what is possible as we venture into uncharted territories of science and exploration seeking answers to questions that have puzzled humanity for generations",
+    "music flows through the air like liquid gold touching hearts and souls with melodies that transcend language and culture bringing people together in moments of pure joy and celebration where rhythm and harmony create a universal language that speaks to the deepest parts of our experience",
+    "the ocean waves crash against the rocky shore in an eternal dance of power and grace where countless mysteries lie hidden beneath the surface waiting to be discovered by brave explorers who dare to venture into the depths where light fades and pressure builds creating an alien world",
+  ],
+  numbers: [
+    "the quick 42 brown fox jumps over 7 lazy dogs while 15 moons shine bright above 3 ancient hills where 100 tall trees stand proud among 25 whispering winds that carry 50 tales of old adventures and forgotten dreams across the vast expanse",
+    "in the year 2024 there are 8 billion people on earth and 5 billion use technology every day to connect with 10 million communities across 195 countries around the world where 300 languages are spoken by 7 different continents",
+    "the average typing speed is 40 words per minute but professional typists can reach 75 to 90 words per minute with 99 percent accuracy after practicing for 300 hours over 6 months of dedicated training sessions",
+    "a computer keyboard has 104 keys including 26 letter keys 10 number keys 11 function keys and various modifier keys that allow users to input over 200 different characters and commands into the system",
+    "the fastest typing speed ever recorded was 216 words per minute by a stenographer who trained for 10 years and could process 3600 keystrokes per hour with remarkable precision and minimal errors",
+  ],
+  punctuation: [
+    "the quick, brown fox jumps over the lazy dog! but wait, there's more to discover in this beautiful world; the moon shines bright, and the stars twinkle above us. isn't nature amazing?",
+    "hello! how are you doing today? i hope you're having a great time. the weather is nice, isn't it? yes, it really is beautiful outside right now; the sun is warm and the breeze is cool.",
+    "to learn programming, you need: patience, practice, and persistence. it's not easy, but it's worth it! the journey of a thousand miles begins with a single step; so start coding today.",
+    "the book was amazing! it had everything: adventure, mystery, and romance. the author's writing style was incredible; every sentence was a masterpiece. i couldn't put it down until i finished it.",
+    "life is what happens when you're busy making other plans. the only way to do great work is to love what you do. if you haven't found it yet, keep looking; don't settle. as with all matters of the heart, you'll know when you find it.",
+  ],
+  quotes: [
+    "to be or not to be that is the question whether tis nobler in the mind to suffer the slings and arrows of outrageous fortune or to take arms against a sea of troubles and by opposing end them",
+    "the only way to do great work is to love what you do if you have not found it yet keep looking do not settle as with all matters of the heart you will know when you find it steve jobs",
+    "in three words i can sum up everything ive learned about life it goes on whether you think you can or you think you cant youre right henry ford",
+    "the greatest glory in living lies not in never falling but in rising every time we fall the way to get started is to quit talking and begin doing nelson mandela",
+    "life is what happens when youre busy making other plans live each day as if your last someday youll be right john lennon",
+  ],
+} as const
+
+type TextMode = keyof typeof SAMPLE_TEXTS
 
 const KEYBOARD_LAYOUT = [
   ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
@@ -30,6 +55,18 @@ const KEYBOARD_LAYOUT = [
 ]
 
 const TIME_OPTIONS = [15, 30, 60]
+const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
+  { value: "normal", label: "Normal" },
+  { value: "numbers", label: "Numbers" },
+  { value: "punctuation", label: "Punct" },
+  { value: "quotes", label: "Quotes" },
+]
+const NAME_SUFFIXES = ["Pro", "Speed", "Ninja", "Turbo", "Ace", "X", "Master", "Go", "God", "Elite", "Blitz", "Rapid"]
+
+function generateSuggestions(name: string): string[] {
+  const shuffled = [...NAME_SUFFIXES].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, 3).map((suffix) => `${name}-${suffix}`)
+}
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined") return false
@@ -71,6 +108,12 @@ export default function TypingGame() {
   const [soundOn, setSoundOn] = useState(true)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [isTouchDevice, setIsTouchDevice] = useState<boolean | null>(null)
+  const [textMode, setTextMode] = useState<TextMode>("normal")
+  const [nameError, setNameError] = useState(false)
+  const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
+  const [checkingName, setCheckingName] = useState(false)
+  const [newCertificates, setNewCertificates] = useState<{ tier: string; id: string }[]>([])
+  const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const soundOnRef = useRef(true)
   const isFinishedRef = useRef(false)
@@ -91,7 +134,8 @@ export default function TypingGame() {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    const randomText = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)]
+    const texts = SAMPLE_TEXTS[textMode]
+    const randomText = texts[Math.floor(Math.random() * texts.length)]
     setSampleText(randomText)
     sampleTextRef.current = randomText
     setCurrentIndex(0)
@@ -108,7 +152,7 @@ export default function TypingGame() {
     setShowResults(false)
     setHasSaved(false)
     setSaveFeedback(null)
-  }, [timeLimit, clearTimeouts])
+  }, [timeLimit, textMode, clearTimeouts])
 
   useEffect(() => {
     const storedNickname = safeLocalStorageGet(NAME_KEY)
@@ -244,6 +288,11 @@ export default function TypingGame() {
     resetGame()
   }
 
+  const changeTextMode = (newMode: TextMode) => {
+    if (showResults) return
+    setTextMode(newMode)
+  }
+
   const toggleSound = () => {
     setSoundOn((prev) => {
       const next = !prev
@@ -258,7 +307,38 @@ export default function TypingGame() {
     setNickname(value)
     setHasSaved(false)
     setSaveFeedback(null)
+    setNameError(false)
+    setNameSuggestions([])
+    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
+    const trimmed = value.trim()
+    if (!trimmed || trimmed.length < 2) {
+      setCheckingName(false)
+      return
+    }
+    setCheckingName(true)
+    nameDebounceTimer.current = setTimeout(() => {
+      checkNameExists(trimmed).then((exists) => {
+        setNameError(exists)
+        setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
+        setCheckingName(false)
+      })
+    }, 400)
   }
+
+  const checkCurrentName = useCallback(() => {
+    const trimmed = nickname.trim()
+    if (!trimmed || trimmed.length < 2) {
+      setNameError(false)
+      setNameSuggestions([])
+      return
+    }
+    setCheckingName(true)
+    checkNameExists(trimmed).then((exists) => {
+      setNameError(exists)
+      setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
+      setCheckingName(false)
+    })
+  }, [nickname])
 
   const persistName = () => {
     if (nickname.trim()) {
@@ -270,12 +350,17 @@ export default function TypingGame() {
     if (!nickname.trim()) return
     setIsSaving(true)
     setSaveFeedback(null)
+    setNewCertificates([])
     try {
-      const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm: displayWpm, accuracy, errors })
+      const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm: displayWpm, accuracy, errors, textMode })
       if (result.success) {
         if (result.saved) {
           setHasSaved(true)
           safeLocalStorageSet(NAME_KEY, nickname.trim())
+          const certs = await awardCertificates(nickname.trim(), displayWpm, accuracy)
+          if (certs.length > 0) {
+            setNewCertificates(certs)
+          }
         } else {
           setSaveFeedback("Your best score is higher — this run wasn't saved.")
         }
@@ -335,46 +420,52 @@ export default function TypingGame() {
 
   return (
     <div id="main-content" className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-6 lg:p-8">
-      <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-8 sm:gap-10">
+      <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
         {/* Header */}
-        <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/"
-              className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-              aria-label="Back to home"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight leading-none text-foreground">
-                TypeMaster
-              </h1>
-              {nickname && (
-                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary leading-none">
-                  Player: {nickname}
+        <header className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+                aria-label="Back to home"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Link>
+              <div className="flex flex-col gap-1">
+                <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight leading-none text-foreground">
+                  TypeMaster
+                </h1>
+                {nickname && (
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary leading-none">
+                    Player: {nickname}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleSound}
+                aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
+                aria-pressed={soundOn}
+                className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
+                  soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+                }`}
+              >
+                {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+              </button>
+              <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
+                <p className="text-3xl font-black font-mono leading-none tabular-nums">
+                  {String(timeLeft).padStart(2, "0")}
                 </p>
-              )}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={toggleSound}
-              aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
-              aria-pressed={soundOn}
-              className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
-                soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-              }`}
-            >
-              {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-            </button>
-            <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
-              <p className="text-3xl font-black font-mono leading-none tabular-nums">
-                {String(timeLeft).padStart(2, "0")}
-              </p>
-            </div>
+          {/* Controls Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex gap-2">
               {TIME_OPTIONS.map((opt) => (
                 <Button
@@ -382,13 +473,33 @@ export default function TypingGame() {
                   onClick={() => changeTimeLimit(opt)}
                   disabled={showResults}
                   aria-pressed={timeLimit === opt}
-                  className={`h-11 px-3.5 border-2 border-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 ${
+                  className={`h-10 px-3.5 border-2 border-foreground font-black uppercase text-xs shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 ${
                     timeLimit === opt
                       ? "bg-primary text-primary-foreground"
                       : "bg-card text-foreground hover:bg-secondary"
                   }`}
                 >
                   {opt}s
+                </Button>
+              ))}
+            </div>
+
+            <div className="hidden sm:block w-px h-6 bg-foreground/20" />
+
+            <div className="flex gap-1.5 sm:gap-2 flex-wrap">
+              {TEXT_MODE_OPTIONS.map((mode) => (
+                <Button
+                  key={mode.value}
+                  onClick={() => changeTextMode(mode.value)}
+                  disabled={showResults}
+                  aria-pressed={textMode === mode.value}
+                  className={`h-10 px-3 border-2 border-foreground font-black uppercase text-[10px] tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 ${
+                    textMode === mode.value
+                      ? "bg-foreground text-background"
+                      : "bg-card text-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {mode.label}
                 </Button>
               ))}
             </div>
@@ -441,6 +552,19 @@ export default function TypingGame() {
               </span>
             </div>
           )}
+        </div>
+
+        {/* Progress Bar */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-2 bg-secondary border-2 border-foreground overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-200 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="text-xs font-black font-mono tabular-nums text-muted-foreground w-10 text-right">
+            {progress}%
+          </span>
         </div>
 
         {/* Controls */}
@@ -532,41 +656,86 @@ export default function TypingGame() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3 border-2 border-foreground bg-card px-4 py-3 shadow-brutal">
-              {editingName ? (
-                <Input
-                  autoFocus
-                  value={nickname}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  onBlur={() => { setEditingName(false); persistName() }}
-                  placeholder="Your name"
-                  aria-label="Your name"
-                  autoComplete="off"
-                  spellCheck={false}
-                  maxLength={20}
-                  className="h-8 border-0 p-0 text-lg font-black"
-                />
-              ) : (
-                <div className="flex flex-col gap-1">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
-                    Saving as
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3 border-2 border-foreground bg-card px-4 py-3 shadow-brutal">
+                {editingName ? (
+                  <Input
+                    autoFocus
+                    value={nickname}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    onBlur={() => { setEditingName(false); persistName(); checkCurrentName() }}
+                    placeholder="Your name"
+                    aria-label="Your name"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={20}
+                    className={`h-8 border-0 p-0 text-lg font-black ${
+                      nameError ? "text-destructive" : ""
+                    }`}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
+                      Saving as
+                    </p>
+                    <p className="text-lg font-black text-foreground leading-none">{nickname || "Anonymous"}</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    setEditingName((v) => !v)
+                    if (!editingName) checkCurrentName()
+                  }}
+                  className="border-2 border-foreground bg-secondary p-1.5 hover:bg-primary hover:text-primary-foreground transition-colors"
+                  aria-label="Edit name"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+              {nameError && (
+                <div className="flex flex-col gap-2 px-1">
+                  <p className="text-xs font-bold text-blue-600">
+                    This name has existing scores. Your best score will be updated.
                   </p>
-                  <p className="text-lg font-black text-foreground leading-none">{nickname || "Anonymous"}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground self-center">
+                      Or try:
+                    </span>
+                    {nameSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => handleNameChange(suggestion)}
+                        className="border-2 border-foreground bg-secondary px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              <button
-                onClick={() => setEditingName((v) => !v)}
-                className="border-2 border-foreground bg-secondary p-1.5 hover:bg-primary hover:text-primary-foreground transition-colors"
-                aria-label="Edit name"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
             </div>
 
             {saveFeedback && (
               <p role="status" aria-live="polite" className="text-center text-xs font-bold uppercase tracking-widest text-destructive">
                 {saveFeedback}
               </p>
+            )}
+
+            {newCertificates.length > 0 && (
+              <div className="flex flex-col gap-2 border-2 border-foreground bg-secondary p-4 shadow-brutal">
+                <p className="text-xs font-bold uppercase tracking-widest text-center text-primary">
+                  New Certificate{newCertificates.length > 1 ? "s" : ""} Earned!
+                </p>
+                {newCertificates.map((cert) => (
+                  <div key={cert.id} className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground">
+                      {cert.tier}
+                    </span>
+                    <code className="text-xs font-mono font-bold text-primary">{cert.id}</code>
+                  </div>
+                ))}
+              </div>
             )}
 
             <div className="flex gap-3">
