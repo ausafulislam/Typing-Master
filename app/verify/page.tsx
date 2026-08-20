@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Keyboard, ShieldCheck, ShieldX, Loader2 } from "lucide-react"
+import { Navbar } from "@/components/navbar"
 import { verifyCertificate } from "../actions"
 import { CERTIFICATE_TIERS } from "@/lib/constants"
 
@@ -34,11 +35,11 @@ export default function VerifyPage() {
   const [hasChecked, setHasChecked] = useState(false)
 
   const formatInput = (value: string) => {
-    const cleaned = value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12)
+    const cleaned = value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 11)
     const parts: string[] = []
     if (cleaned.length > 0) parts.push(cleaned.slice(0, 4))
-    if (cleaned.length > 4) parts.push(cleaned.slice(4, 8))
-    if (cleaned.length > 8) parts.push(cleaned.slice(8, 12))
+    if (cleaned.length > 4) parts.push(cleaned.slice(4, 7))
+    if (cleaned.length > 7) parts.push(cleaned.slice(7, 11))
     return parts.join(".")
   }
 
@@ -78,27 +79,19 @@ export default function VerifyPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
+      <Navbar
+        rightContent={
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/"
-              className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-              aria-label="Back to home"
+              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Home</span>
             </Link>
-            <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">Verify Certificate</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground border-2 border-foreground shadow-brutal p-1.5 sm:p-2">
-              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">TypeMaster</span>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-lg flex flex-col gap-8">

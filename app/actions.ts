@@ -85,7 +85,7 @@ export async function saveGameSession(data: {
   const supabase = await createClient()
 
   // Insert into game_history (every game)
-  await supabase.from("game_history").insert({
+  const { error: historyError } = await supabase.from("game_history").insert({
     name,
     text_mode: textMode,
     duration: data.duration,
@@ -93,6 +93,9 @@ export async function saveGameSession(data: {
     accuracy: data.accuracy,
     errors: data.errors,
   })
+  if (historyError) {
+    console.error("Failed to save game history:", historyError)
+  }
 
   const findBest = async () => {
     const { data: sessions, error } = await supabase
@@ -310,7 +313,10 @@ export async function awardCertificates(name: string, wpm: number, accuracy: num
 
 export async function verifyCertificate(id: string) {
   const supabase = await createClient()
-  const cleanId = id.trim().toUpperCase()
+  // Normalize: strip non-alphanumeric, rebuild in 4-3-4 format
+  const raw = id.trim().toUpperCase().replace(/[^A-Z0-9]/g, "")
+  if (raw.length < 4) return null
+  const cleanId = raw.slice(0, 4) + "." + raw.slice(4, 7) + "." + raw.slice(7, 11)
 
   try {
     const { data, error } = await supabase

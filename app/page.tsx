@@ -7,18 +7,14 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Keyboard, ArrowRight, Github, Star, User } from "lucide-react"
+import { ArrowRight, Keyboard } from "lucide-react"
 import Link from "next/link"
 import { Leaderboard } from "@/components/leaderboard"
+import { Navbar } from "@/components/navbar"
 import { getPlayerStats, checkNameExists } from "./actions"
+import { generateSuggestions } from "@/lib/name-utils"
 
 const NAME_KEY = "typing-game-nickname"
-const NAME_SUFFIXES = ["Pro", "Speed", "Ninja", "Turbo", "Ace", "X", "Master", "Go", "God", "Elite", "Blitz", "Rapid"]
-
-function generateSuggestions(name: string): string[] {
-  const shuffled = [...NAME_SUFFIXES].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, 3).map((suffix) => `${name}-${suffix}`)
-}
 
 interface PlayerStats {
   wpm: number
@@ -150,48 +146,11 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="bg-primary text-primary-foreground border-2 border-foreground shadow-brutal p-1.5 sm:p-2">
-              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">TypeMaster</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href="/profile"
-              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-            >
-              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Profile</span>
-            </Link>
-            <a
-              href="https://github.com/ausafulislam/Typing-Master"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-            >
-              <Github className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">GitHub</span>
-              {stars !== null && (
-                <span className="inline-flex items-center gap-0.5 text-primary">
-                  <Star className="w-3 h-3 fill-primary" />
-                  {stars}
-                </span>
-              )}
-            </a>
-            <Button
-              onClick={() => setOpen(true)}
-              className="border-2 border-foreground bg-primary text-primary-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-3 sm:px-4 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-            >
-              {savedName ? "Play" : "Start"}
-              <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </Button>
-          </div>
-        </div>
-      </header>
+      <Navbar
+        onStartClick={() => setOpen(true)}
+        savedName={savedName}
+        stars={stars}
+      />
 
       {/* Main */}
       <main id="main-content" className="flex-1">
@@ -203,7 +162,7 @@ export default function LandingPage() {
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="border-2 border-foreground bg-foreground text-background w-fit px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                    v0.2.0
+                    v0.3.0
                   </span>
                   <span className="border-2 border-foreground bg-card px-3 py-1 text-[10px] font-black uppercase tracking-widest shadow-brutal">
                     No sign-in required

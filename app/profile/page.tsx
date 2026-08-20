@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, Keyboard, Trophy, Medal, Gamepad2, Copy, Check } from "lucide-react"
+import { ArrowLeft, Keyboard, Trophy, Medal, Gamepad2, Copy, Check, ExternalLink } from "lucide-react"
+import { Navbar } from "@/components/navbar"
 import { getPlayerStats, getPlayerCertificates, getPlayerGameHistory } from "../actions"
 import { CERTIFICATE_TIERS } from "@/lib/constants"
+import { useRouter } from "next/navigation"
 
 const NAME_KEY = "typing-game-nickname"
 
@@ -45,12 +47,8 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-function getTierColor(tier: string): string {
-  const t = CERTIFICATE_TIERS.find((ct) => ct.name === tier)
-  return t?.color ?? "#888"
-}
-
 export default function ProfilePage() {
+  const router = useRouter()
   const [name, setName] = useState<string | null>(null)
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [certificates, setCertificates] = useState<Certificate[]>([])
@@ -124,27 +122,19 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
+      <Navbar
+        rightContent={
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/"
-              className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-              aria-label="Back to home"
+              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Home</span>
             </Link>
-            <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">Profile</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground border-2 border-foreground shadow-brutal p-1.5 sm:p-2">
-              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span className="text-base sm:text-xl font-black uppercase tracking-tight text-foreground">TypeMaster</span>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
@@ -218,14 +208,23 @@ export default function ProfilePage() {
                           </span>
                         </div>
                         {earned ? (
-                          <div className="flex items-center justify-between gap-2">
-                            <code className="text-xs font-mono font-bold text-primary">{earned.id}</code>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <code className="text-xs font-mono font-bold text-primary">{earned.id}</code>
+                              <button
+                                onClick={() => copyId(earned.id)}
+                                className="border-2 border-foreground bg-secondary p-1 hover:bg-primary hover:text-primary-foreground transition-colors"
+                                aria-label="Copy certificate ID"
+                              >
+                                {copiedId === earned.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                            </div>
                             <button
-                              onClick={() => copyId(earned.id)}
-                              className="border-2 border-foreground bg-secondary p-1 hover:bg-primary hover:text-primary-foreground transition-colors"
-                              aria-label="Copy certificate ID"
+                              onClick={() => router.push(`/certificate/${earned.id}`)}
+                              className="w-full inline-flex items-center justify-center gap-1.5 border-2 border-foreground bg-foreground text-background px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
                             >
-                              {copiedId === earned.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              <ExternalLink className="w-3 h-3" />
+                              View Certificate
                             </button>
                           </div>
                         ) : (

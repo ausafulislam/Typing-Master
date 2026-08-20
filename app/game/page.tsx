@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, BarChart3, Loader2, Check, ArrowLeft, Pencil, Volume2, VolumeX, Trophy, Keyboard } from "lucide-react"
+import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy, Keyboard, ArrowLeft } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Navbar } from "@/components/navbar"
 import Link from "next/link"
 import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
+import { generateSuggestions } from "@/lib/name-utils"
 
 const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
@@ -61,13 +63,6 @@ const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
   { value: "punctuation", label: "Punct" },
   { value: "quotes", label: "Quotes" },
 ]
-const NAME_SUFFIXES = ["Pro", "Speed", "Ninja", "Turbo", "Ace", "X", "Master", "Go", "God", "Elite", "Blitz", "Rapid"]
-
-function generateSuggestions(name: string): string[] {
-  const shuffled = [...NAME_SUFFIXES].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, 3).map((suffix) => `${name}-${suffix}`)
-}
-
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined") return false
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -419,51 +414,37 @@ export default function TypingGame() {
   ]
 
   return (
-    <div id="main-content" className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-6 lg:p-8">
-      <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
-        {/* Header */}
-        <header className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="border-2 border-foreground bg-card p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-                aria-label="Back to home"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Link>
-              <div className="flex flex-col gap-1">
-                <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight leading-none text-foreground">
-                  TypeMaster
-                </h1>
-                {nickname && (
-                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary leading-none">
-                    Player: {nickname}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={toggleSound}
-                aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
-                aria-pressed={soundOn}
-                className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
-                  soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-                }`}
-              >
-                {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-              </button>
-              <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
-                <p className="text-3xl font-black font-mono leading-none tabular-nums">
-                  {String(timeLeft).padStart(2, "0")}
-                </p>
-              </div>
+    <div id="main-content" className="min-h-screen bg-background flex flex-col">
+      <Navbar
+        rightContent={
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={toggleSound}
+              aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
+              aria-pressed={soundOn}
+              className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
+                soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+              }`}
+            >
+              {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+            <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
+              <p className="text-3xl font-black font-mono leading-none tabular-nums">
+                {String(timeLeft).padStart(2, "0")}
+              </p>
             </div>
           </div>
-
+        }
+      />
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
+          {/* Player Name */}
+          {nickname && (
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary leading-none">
+              Player: {nickname}
+            </p>
+          )}
           {/* Controls Row */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex gap-2">
@@ -504,7 +485,6 @@ export default function TypingGame() {
               ))}
             </div>
           </div>
-        </header>
 
         {/* Live Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -522,7 +502,7 @@ export default function TypingGame() {
         </div>
 
         {/* Text Display */}
-        <div className="bg-secondary border-2 border-foreground p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
+        <div className="bg-secondary p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
           <div
             className="text-[1.6rem] sm:text-3xl font-mono leading-[1.9] tracking-wide transition-transform duration-300 ease-out"
             style={{ transform: `translateY(-${Math.floor(currentIndex / CHARS_PER_LINE) * LINE_HEIGHT_REM}rem)` }}
@@ -547,7 +527,7 @@ export default function TypingGame() {
           </div>
           {!isActive && !isFinished && currentIndex === 0 && (
             <div className="absolute inset-x-0 bottom-4 flex justify-center">
-              <span className="border-2 border-foreground bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] shadow-brutal">
+              <span className="bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]">
                 Start typing to begin
               </span>
             </div>
@@ -556,7 +536,7 @@ export default function TypingGame() {
 
         {/* Progress Bar */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-2 bg-secondary border-2 border-foreground overflow-hidden">
+          <div className="flex-1 h-2 bg-secondary overflow-hidden">
             <div
               className="h-full bg-primary transition-all duration-200 ease-out"
               style={{ width: `${progress}%` }}
@@ -631,6 +611,7 @@ export default function TypingGame() {
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       {/* Results Dialog */}
