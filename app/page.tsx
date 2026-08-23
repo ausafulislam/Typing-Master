@@ -13,6 +13,7 @@ import { Leaderboard } from "@/components/leaderboard"
 import { getPlayerStats, checkNameExists } from "./actions"
 import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
 import { APP_VERSION } from "@/lib/constants"
+import { useLocalStorageState } from "@/hooks/use-local-storage-state"
 
 const NAME_KEY = "typing-game-nickname"
 
@@ -22,39 +23,17 @@ interface PlayerStats {
   rank: number
 }
 
-function safeGetItem(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function safeSetItem(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {}
-}
-
 export default function LandingPage() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [savedName, setSavedName] = useState<string | null>(null)
+  const [savedName, setSavedName] = useLocalStorageState(NAME_KEY, "")
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [nameError, setNameError] = useState(false)
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
   const [checkingName, setCheckingName] = useState(false)
   const [existingPlayerStats, setExistingPlayerStats] = useState<PlayerStats | null>(null)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    const stored = safeGetItem(NAME_KEY)
-    if (stored) {
-      setSavedName(stored)
-      setName(stored)
-    }
-  }, [])
 
   useEffect(() => {
     if (!savedName) return
@@ -66,67 +45,69 @@ export default function LandingPage() {
     return () => { cancelled = true }
   }, [savedName])
 
-  useEffect(() => {
-    if (!open) return
-    const current = name.trim()
-    if (!current || current.length < 2) {
-      setNameError(false)
-      setNameSuggestions([])
-      setExistingPlayerStats(null)
-      return
-    }
-    let cancelled = false
+  // Seeds the dialog from the stored name and pre-checks it — runs on the user's
+  // click, so synchronous setState here is fine.
+  const openDialog = () => {
+    const seed = savedName
+    setName(seed)
+    setNameError(false)
+    setNameSuggestions([])
+    setExistingPlayerStats(null)
+    setOpen(true)
+    const current = seed.trim()
+    if (!current || current.length < 2) return
     setCheckingName(true)
-    checkNameExists(current).then((exists) => {
-      if (cancelled) return
-      setNameError(exists)
-      setNameSuggestions(exists ? generateSuggestions(current) : [])
-      if (exists) {
-        getPlayerStats(current).then((playerStats) => {
-          if (!cancelled) setExistingPlayerStats(playerStats)
-        })
-      } else {
-        setExistingPlayerStats(null)
-      }
-      setCheckingName(false)
-    })
-    return () => { cancelled = true }
-  }, [open])
+    checkNameExists(current)
+      .then((exists) => {
+        setNameError(exists)
+        setNameSuggestions(exists ? generateSuggestions(current) : [])
+        if (!exists) return null
+        return getPlayerStats(current)
+      })
+      .then((playerStats) => {
+        if (playerStats) setExistingPlayerStats(playerStats)
+      })
+      .catch(() => {})
+      .finally(() => setCheckingName(false))
+  }
 
-  useEffect(() => {
+  // Live validation while typing in the dialog — event-driven, debounced.
+  const handleNameInputChange = (value: string) => {
+    setName(value)
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    const current = name.trim()
+    const current = value.trim()
     if (!current || current.length < 2) {
       setNameError(false)
       setNameSuggestions([])
       setExistingPlayerStats(null)
+      setCheckingName(false)
       return
     }
     setCheckingName(true)
     debounceTimer.current = setTimeout(() => {
-      checkNameExists(current).then((exists) => {
-        setNameError(exists)
-        setNameSuggestions(exists ? generateSuggestions(current) : [])
-        if (exists) {
-          getPlayerStats(current).then((playerStats) => {
+      checkNameExists(current)
+        .then((exists) => {
+          setNameError(exists)
+          setNameSuggestions(exists ? generateSuggestions(current) : [])
+          if (!exists) {
+            setExistingPlayerStats(null)
+            setCheckingName(false)
+            return
+          }
+          return getPlayerStats(current).then((playerStats) => {
             setExistingPlayerStats(playerStats)
+            setCheckingName(false)
           })
-        } else {
-          setExistingPlayerStats(null)
-        }
-        setCheckingName(false)
-      })
+        })
+        .catch(() => setCheckingName(false))
     }, 400)
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    }
-  }, [name])
+  }
 
   const startGame = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    safeSetItem(NAME_KEY, sanitizeName(trimmed) || trimmed)
+    setSavedName(sanitizeName(trimmed) || trimmed)
     router.push("/game")
   }
 
@@ -196,7 +177,7 @@ export default function LandingPage() {
 
               {/* CTA */}
               <Button
-                onClick={() => setOpen(true)}
+                onClick={openDialog}
                 className="w-full sm:w-auto h-auto border-2 border-foreground bg-primary text-primary-foreground text-sm sm:text-base font-black uppercase tracking-wide px-6 sm:px-8 py-3 sm:py-4 shadow-brutal-lg hover:translate-x-1 hover:translate-y-1 hover:shadow-brutal transition-brutal"
               >
                 {savedName ? `Continue as ${savedName}` : "Start Typing Test"}
@@ -239,7 +220,7 @@ export default function LandingPage() {
             <Input
               autoFocus
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameInputChange(e.target.value)}
               placeholder="Your name"
               aria-label="Your name"
               autoComplete="off"
@@ -273,11 +254,11 @@ export default function LandingPage() {
                   <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground self-center">
                     Or try:
                   </span>
-                  {nameSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => setName(suggestion)}
+                    {nameSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => handleNameInputChange(suggestion)}
                       className="border-2 border-foreground bg-secondary px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
                     >
                       {suggestion}

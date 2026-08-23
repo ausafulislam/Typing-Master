@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Touch devices — same media query the old JS touch-gate used, CSS-only */
+@custom-variant coarse (@media (hover: none) and (pointer: coarse));
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

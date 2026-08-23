@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { ArrowLeft, Download } from "lucide-react"
 import type { CertificateRecord } from "@/app/actions"
 import { CERTIFICATE_TIERS } from "@/lib/constants"
@@ -16,12 +16,16 @@ function formatDate(dateStr: string): string {
 
 const BLUE = "#1E56EA"
 
-export function CertificateView({ cert }: { cert: CertificateRecord }) {
-  const [verifyUrl, setVerifyUrl] = useState("/verify")
+const emptySubscribe = () => () => {}
 
-  useEffect(() => {
-    setVerifyUrl(`${window.location.origin}/verify`)
-  }, [])
+export function CertificateView({ cert }: { cert: CertificateRecord }) {
+  // Server snapshot renders the relative path; after hydration the printed
+  // certificate shows the absolute URL.
+  const verifyUrl = useSyncExternalStore(
+    emptySubscribe,
+    () => `${window.location.origin}/verify`,
+    () => "/verify",
+  )
 
   const tier = getTierConfig(cert.tier)
 

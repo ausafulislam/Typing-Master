@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { Monitor, Moon, Sun } from "lucide-react"
-import { useTheme, type Theme } from "@/components/theme-provider"
+import { setTheme, useTheme, type Theme } from "@/components/theme-provider"
 
 const ORDER: Theme[] = ["light", "dark", "system"]
 
@@ -12,13 +12,16 @@ const LABELS: Record<Theme, string> = {
   system: "System theme",
 }
 
-export function ThemeToggle() {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
+const emptySubscribe = () => () => {}
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+export function ThemeToggle() {
+  const theme = useTheme()
+  // False during SSR/hydration so the label matches server HTML; true after.
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  )
 
   const current: Theme = mounted ? theme : "system"
   const Icon = current === "light" ? Sun : current === "dark" ? Moon : Monitor

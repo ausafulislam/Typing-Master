@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowLeft, Keyboard, Trophy, Medal, Gamepad2, Copy, Check, ExternalLink } from "lucide-react"
 import { getPlayerStats, getPlayerCertificates, getPlayerGameHistory } from "../actions"
 import { CERTIFICATE_TIERS } from "@/lib/constants"
+import { useLocalStorageState } from "@/hooks/use-local-storage-state"
 import { useRouter } from "next/navigation"
 
 const NAME_KEY = "typing-game-nickname"
@@ -33,12 +34,10 @@ interface GameEntry {
   created_at: string
 }
 
-function safeGetItem(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
+interface ProfileData {
+  stats: PlayerStats | null
+  certificates: Certificate[]
+  history: GameEntry[]
 }
 
 function formatDate(dateStr: string): string {
@@ -48,41 +47,27 @@ function formatDate(dateStr: string): string {
 
 export default function ProfilePage() {
   const router = useRouter()
-  const [name, setName] = useState<string | null>(null)
-  const [stats, setStats] = useState<PlayerStats | null>(null)
-  const [certificates, setCertificates] = useState<Certificate[]>([])
-  const [history, setHistory] = useState<GameEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const [name] = useLocalStorageState(NAME_KEY, "")
+  const [data, setData] = useState<ProfileData | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   useEffect(() => {
-    const stored = safeGetItem(NAME_KEY)
-    setName(stored)
-  }, [])
-
-  useEffect(() => {
-    if (!name) {
-      setLoading(false)
-      return
-    }
+    if (!name) return
     let cancelled = false
-    setLoading(true)
-
     Promise.all([
       getPlayerStats(name),
       getPlayerCertificates(name),
       getPlayerGameHistory(name),
     ]).then(([playerStats, certs, hist]) => {
-      if (!cancelled) {
-        setStats(playerStats)
-        setCertificates(certs)
-        setHistory(hist)
-        setLoading(false)
-      }
+      if (!cancelled) setData({ stats: playerStats, certificates: certs, history: hist })
     })
-
     return () => { cancelled = true }
   }, [name])
+
+  const loading = name !== "" && data === null
+  const stats = data?.stats ?? null
+  const certificates = data?.certificates ?? []
+  const history = data?.history ?? []
 
   const copyId = (id: string) => {
     try {

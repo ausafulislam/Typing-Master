@@ -10,6 +10,7 @@ import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
 import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
 import { calculateAccuracy, calculateProgress, calculateWpm } from "@/lib/wpm"
+import { useLocalStorageState } from "@/hooks/use-local-storage-state"
 
 const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
@@ -48,6 +49,10 @@ const SAMPLE_TEXTS = {
 
 type TextMode = keyof typeof SAMPLE_TEXTS
 
+// Deterministic first render (server + client match, no hydration swap);
+// every restart/mode change afterwards randomizes via resetGame().
+const INITIAL_TEXT = SAMPLE_TEXTS.normal[0]
+
 const KEYBOARD_LAYOUT = [
   ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
   ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
@@ -62,24 +67,8 @@ const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
   { value: "quotes", label: "Quotes" },
 ]
 
-function safeLocalStorageGet(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function safeLocalStorageSet(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // Storage full or sandboxed — silently ignore
-  }
-}
-
 export default function TypingGame() {
-  const [sampleText, setSampleText] = useState("")
+  const [sampleText, setSampleText] = useState<string>(INITIAL_TEXT)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [timeLimit, setTimeLimit] = useState(30)
   const [timeLeft, setTimeLeft] = useState(30)
@@ -90,11 +79,15 @@ export default function TypingGame() {
   const [pressedKey, setPressedKey] = useState<string | null>(null)
   const [errorFlash, setErrorFlash] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [nickname, setNickname] = useState("")
+  const [storedName, setStoredName] = useLocalStorageState(NAME_KEY, "")
+  // Draft for the rename input — null means "not editing", show stored name.
+  const [nicknameDraft, setNicknameDraft] = useState<string | null>(null)
+  const nickname = nicknameDraft ?? storedName
   const [isSaving, setIsSaving] = useState(false)
   const [hasSaved, setHasSaved] = useState(false)
   const [editingName, setEditingName] = useState(false)
-  const [soundOn, setSoundOn] = useState(true)
+  const [soundPref, setSoundPref] = useLocalStorageState(SOUND_KEY, "on")
+  const soundOn = soundPref !== "off"
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [textMode, setTextMode] = useState<TextMode>("normal")
   const [nameError, setNameError] = useState(false)
@@ -104,15 +97,13 @@ export default function TypingGame() {
   const [liveWpm, setLiveWpm] = useState(0)
   const [finalWpm, setFinalWpm] = useState<number | null>(null)
   const [finalElapsed, setFinalElapsed] = useState(0)
-  const [isTouchDevice, setIsTouchDevice] = useState(false)
   const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const soundOnRef = useRef(true)
   const isFinishedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const currentIndexRef = useRef(0)
-  const sampleTextRef = useRef("")
+  const sampleTextRef = useRef<string>(INITIAL_TEXT)
   const isActiveRef = useRef(false)
   const startedAtRef = useRef<number | null>(null)
   const timeLimitRef = useRef(timeLimit)
@@ -185,25 +176,6 @@ export default function TypingGame() {
     [timeLimit, textMode, clearTimeouts],
   )
 
-  // Initial text generation — mount only (handlers reset directly afterwards).
-  useEffect(() => {
-    resetGame()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const storedNickname = safeLocalStorageGet(NAME_KEY)
-    if (storedNickname) setNickname(storedNickname)
-    const storedSound = safeLocalStorageGet(SOUND_KEY)
-    if (storedSound === "off") {
-      setSoundOn(false)
-      soundOnRef.current = false
-    }
-  }, [])
-
-  useEffect(() => {
-    setIsTouchDevice(window.matchMedia("(hover: none) and (pointer: coarse)").matches)
-  }, [])
-
   // Timer effect — wall-clock based so interval throttling/drift cannot extend the game.
   useEffect(() => {
     if (!isActive) return
@@ -270,7 +242,7 @@ export default function TypingGame() {
       setTotalTyped(totalTypedRef.current)
 
       if (key === expectedChar) {
-        if (soundOnRef.current) playKeySound(key === " " ? "space" : "key")
+        if (soundOn) playKeySound(key === " " ? "space" : "key")
         const newIndex = currentIndexRef.current + 1
         setCurrentIndex(newIndex)
         currentIndexRef.current = newIndex
@@ -278,7 +250,7 @@ export default function TypingGame() {
           finishGame()
         }
       } else {
-        if (soundOnRef.current) playKeySound("error")
+        if (soundOn) playKeySound("error")
         errorsRef.current += 1
         setErrors(errorsRef.current)
         setErrorFlash(true)
@@ -286,7 +258,7 @@ export default function TypingGame() {
         timeoutsRef.current.push(errorTimeout)
       }
     },
-    [finishGame],
+    [finishGame, soundOn],
   )
 
   // Handle key press — uses refs for values that change between renders
@@ -372,17 +344,13 @@ export default function TypingGame() {
   }
 
   const toggleSound = () => {
-    setSoundOn((prev) => {
-      const next = !prev
-      soundOnRef.current = next
-      safeLocalStorageSet(SOUND_KEY, next ? "on" : "off")
-      if (next) playKeySound("key")
-      return next
-    })
+    const next = !soundOn
+    setSoundPref(next ? "on" : "off")
+    if (next) playKeySound("key")
   }
 
   const handleNameChange = (value: string) => {
-    setNickname(value)
+    setNicknameDraft(value)
     setHasSaved(false)
     setSaveFeedback(null)
     setNameError(false)
@@ -417,8 +385,8 @@ export default function TypingGame() {
   const persistName = () => {
     const sanitized = sanitizeName(nickname)
     if (sanitized) {
-      setNickname(sanitized)
-      safeLocalStorageSet(NAME_KEY, sanitized)
+      setStoredName(sanitized)
+      setNicknameDraft(null)
     }
   }
 
@@ -434,7 +402,8 @@ export default function TypingGame() {
       if (result.success) {
         if (result.saved) {
           setHasSaved(true)
-          safeLocalStorageSet(NAME_KEY, sanitized)
+          setStoredName(sanitized)
+          setNicknameDraft(null)
           const certs = await awardCertificates(sanitized, wpmToSave, accuracy)
           if (certs.length > 0) {
             setNewCertificates(certs)
@@ -583,7 +552,8 @@ export default function TypingGame() {
             {!isActive && !isFinished && currentIndex === 0 && (
               <div className="absolute inset-x-0 bottom-4 flex justify-center pointer-events-none">
                 <span className="bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]">
-                  {isTouchDevice ? "Tap here to start typing" : "Start typing to begin"}
+                  <span className="hidden coarse:inline">Tap here to start typing</span>
+                  <span className="coarse:hidden">Start typing to begin</span>
                 </span>
               </div>
             )}
