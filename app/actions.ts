@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { CERTIFICATE_TIERS, LEADERBOARD_PAGE_SIZE, generateCertificateId } from "@/lib/constants"
+import { CERTIFICATE_TIERS, LEADERBOARD_PAGE_SIZE, MAX_LEADERBOARD_ENTRIES, generateCertificateId } from "@/lib/constants"
 import { sanitizeName } from "@/lib/name-utils"
 
 const CERT_ID_RETRIES = 5
@@ -114,7 +114,12 @@ export async function getLeaderboard(page = 1) {
   const supabase = await createClient()
   const safePage = Math.max(1, Math.floor(page))
   const from = (safePage - 1) * LEADERBOARD_PAGE_SIZE
-  const to = from + LEADERBOARD_PAGE_SIZE - 1
+
+  // The board is capped at the top MAX_LEADERBOARD_ENTRIES scores.
+  if (from >= MAX_LEADERBOARD_ENTRIES) {
+    return { entries: [], page: safePage, hasMore: false, error: null }
+  }
+  const to = Math.min(from + LEADERBOARD_PAGE_SIZE - 1, MAX_LEADERBOARD_ENTRIES - 1)
 
   try {
     const { data, error, count } = await supabase
@@ -129,7 +134,8 @@ export async function getLeaderboard(page = 1) {
     if (error) throw error
 
     const entries = (data ?? []) as { name: string; wpm: number; accuracy: number }[]
-    const hasMore = count !== null ? from + entries.length < count : false
+    const shownSoFar = from + entries.length
+    const hasMore = count !== null ? shownSoFar < Math.min(count, MAX_LEADERBOARD_ENTRIES) : false
 
     return { entries, page: safePage, hasMore, error: null }
   } catch (error: unknown) {

@@ -1,6 +1,9 @@
-export const LEADERBOARD_PAGE_SIZE = 15
+export const LEADERBOARD_PAGE_SIZE = 50
 
-export const APP_VERSION = "0.6.0"
+/** Hard cap — the leaderboard only ever shows the top 50 scores. */
+export const MAX_LEADERBOARD_ENTRIES = 50
+
+export const APP_VERSION = "0.7.0"
 
 export interface CertificateTier {
   name: string

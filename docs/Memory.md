@@ -21,11 +21,22 @@ After finishing a task or phase step:
 
 **Active phase:** Phase 1 — Core Typing Engine Polish
 **Last updated:** 2026-08-23
-**Next task:** Phase 1 items implemented and verified (tsc/lint/build/smoke test pass, v0.6.0). Next: real-device mobile check of the typing input, then review Phase 1 exit criteria and move to Phase 2 auth groundwork.
+**Next task:** Real-device mobile check of the typing input; then review Phase 1 exit criteria and move to Phase 2 auth groundwork.
 
 ---
 
 ## Log
+
+### 2026-08-23 — Zero-warning lint + leaderboard cap (v0.7.0)
+**Phase:** Phase 1 (polish)
+**Done:**
+- Eliminated all 12 `react-hooks/set-state-in-effect` warnings: new shared `hooks/use-local-storage-state.ts` (useSyncExternalStore-backed), theme provider/toggle rewritten as an external store, homepage dialog validation moved to event handlers, profile data fetch restructured, certificate verify URL via server/client snapshots, touch hint now CSS-only (`coarse` custom variant in globals.css)
+- Game initial text is now deterministic (`INITIAL_TEXT`) instead of a mount-effect `resetGame()` — no hydration swap, randomization still happens on every restart/mode change
+- Leaderboard capped at top 50 entries (`LEADERBOARD_PAGE_SIZE = 50`, `MAX_LEADERBOARD_ENTRIES = 50`, enforced in `getLeaderboard`)
+
+**Deviations from plan:** None.
+
+**Known tradeoff:** First page load always starts with the same sample text (deterministic SSR); subsequent restarts randomize. Accepted to avoid setState-in-effect and hydration swaps.
 
 ### 2026-08-23 — Phase 1 core implementation
 **Phase:** Phase 1
