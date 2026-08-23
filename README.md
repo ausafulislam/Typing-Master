@@ -13,13 +13,14 @@ A typing speed and accuracy game with a bold brutalist design. Type displayed te
 - **4 text modes** — Normal, Numbers, Punctuation, Quotes
 - **3 time limits** — 15s, 30s, 60s
 - **Real-time stats** — WPM, accuracy, errors, progress update live as you type
+- **Dark / light / system theme** — toggle in the navbar, respects `prefers-color-scheme`, no flash on load
+- **Mobile support** — playable on touch devices via a hidden input that summons the on-screen keyboard
 - **Visual keyboard** — on-screen keyboard highlights pressed keys with audio feedback
-- **Mechanical keyboard sounds** — synthesized via Web Audio API (no audio files)
+- **Mechanical keyboard sounds** — synthesized via Web Audio API (no audio files), mutable
 - **Global leaderboard** — paginated, ranked by WPM then accuracy
-- **Certificate system** — earn Bronze, Silver, Gold, or Diamond certificates based on performance
+- **Certificate system (legacy)** — earn Bronze, Silver, Gold, or Diamond certificates based on performance
 - **Certificate verification** — anyone can verify a certificate by ID
 - **Player profile** — view stats, certificates, and game history
-- **Touch device detection** — blocks gameplay on touch-only devices with a clear message
 - **Accessibility** — skip-nav link, `prefers-reduced-motion` support, ARIA labels
 - **Brutalist UI** — high-contrast, zero border-radius, brutal shadows
 
@@ -86,10 +87,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ```
 ├── app/
-│   ├── layout.tsx          # Root layout (Geist fonts, analytics, skip-nav)
+│   ├── layout.tsx          # Root layout (Geist fonts, theme init, analytics, skip-nav)
 │   ├── page.tsx            # Landing page (hero, stats, leaderboard, name dialog)
-│   ├── globals.css         # Tailwind v4 config, theme variables, brutalist utilities
+│   ├── globals.css         # Tailwind v4 config, light+dark themes, brutalist utilities
 │   ├── actions.ts          # Server actions (save scores, leaderboard, certificates)
+│   ├── error.tsx           # Global error boundary
 │   ├── not-found.tsx       # Custom 404 page
 │   ├── game/
 │   │   ├── page.tsx        # Main typing game
@@ -97,23 +99,29 @@ Open [http://localhost:3000](http://localhost:3000).
 │   │   └── error.tsx       # Error boundary
 │   ├── profile/
 │   │   └── page.tsx        # Player profile (stats, certs, history)
-│   └── verify/
-│       └── page.tsx        # Certificate verification
+│   ├── verify/
+│   │   └── page.tsx        # Certificate verification
+│   └── certificate/
+│       └── [id]/page.tsx   # Shareable certificate view (print/PDF)
 ├── components/
 │   ├── leaderboard.tsx     # Paginated leaderboard (desktop table + mobile cards)
-│   └── ui/                 # shadcn/ui components
-├── hooks/
-│   ├── use-toast.ts        # Toast notification state
-│   └── use-mobile.ts       # Mobile breakpoint detection
+│   ├── navbar.tsx          # Shared navbar with theme toggle + GitHub stars
+│   ├── footer.tsx
+│   ├── certificate-view.tsx
+│   ├── theme-provider.tsx  # Light/dark/system theme context (no external deps)
+│   ├── theme-toggle.tsx
+│   └── ui/                 # shadcn/ui components (button, dialog, input)
 ├── lib/
 │   ├── utils.ts            # cn() utility (clsx + tailwind-merge)
+│   ├── wpm.ts              # Pure WPM/accuracy/progress calculations
 │   ├── constants.ts        # Leaderboard page size, certificate tiers, ID generator
 │   ├── key-sound.ts        # Web Audio API keyboard sound synthesizer
 │   ├── name-utils.ts       # Name suggestion generator
 │   └── supabase/
 │       └── server.ts       # Supabase server-side client (cookie-based SSR)
 ├── supabase/
-│   └── schema.sql          # Database schema (3 tables + RLS + indexes)
+│   └── schema.sql          # Database schema (3 tables + RLS + RPCs + indexes)
+├── docs/                   # PRD, Architecture, Rules, Phases, Design, Memory
 ├── public/                 # Favicons and static assets
 ├── .env.example            # Environment variable template
 ├── components.json         # shadcn/ui configuration
@@ -130,6 +138,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `/game` | Typing game — text display, timer, live stats, virtual keyboard, results |
 | `/profile` | Player profile — stats, certificates, game history (last 100 games) |
 | `/verify` | Certificate verification — enter a certificate ID to check authenticity |
+| `/certificate/[id]` | Shareable certificate view with print/PDF support |
 
 ## Certificate Tiers
 
@@ -177,7 +186,10 @@ Certificate IDs follow the format `TYM<Prefix>.<wpm_base36>.<accuracy_base36>` (
 | `accuracy` | numeric | |
 | `created_at` | timestamptz | |
 
-All tables have RLS enabled with public SELECT and INSERT policies.
+All tables have RLS enabled with **public SELECT only**. Writes go exclusively through the
+`submit_game_session` and `award_certificate` SECURITY DEFINER functions, which validate
+input server-side and enforce atomic best-score upserts. Direct INSERT/UPDATE via the
+anon key is blocked by policy.
 
 ## Deployment
 
