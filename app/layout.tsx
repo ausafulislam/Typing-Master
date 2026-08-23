@@ -4,7 +4,11 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
+import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
+
+// Runs before first paint so the correct theme class is present at hydration.
+const themeInitScript = `(function(){try{var t=localStorage.getItem("tmx-theme");var d=t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(d)document.documentElement.classList.add("dark")}catch(e){}})()`
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -41,8 +45,10 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#F0F3F6",
-  colorScheme: "light",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F0F3F6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0A0A0A" },
+  ],
 }
 
 export default function RootLayout({
@@ -51,7 +57,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`bg-background ${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`bg-background ${geistSans.variable} ${geistMono.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="font-sans antialiased flex min-h-screen flex-col">
         <a
           href="#main-content"
@@ -59,9 +72,11 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <Navbar />
-        <div className="flex-1">{children}</div>
-        <Footer />
+        <ThemeProvider>
+          <Navbar />
+          <div className="flex-1">{children}</div>
+          <Footer />
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

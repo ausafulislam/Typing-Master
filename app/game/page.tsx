@@ -696,7 +696,7 @@ export default function TypingGame() {
               </div>
               {nameError && (
                 <div className="flex flex-col gap-2 px-1">
-                  <p className="text-xs font-bold text-blue-600">
+                  <p className="text-xs font-bold text-primary">
                     This name has existing scores. Your best score will be updated.
                   </p>
                   <div className="flex flex-wrap gap-2">

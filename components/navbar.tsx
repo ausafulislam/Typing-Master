@@ -5,6 +5,7 @@ import { Keyboard, Github, Star, User, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { APP_VERSION } from "@/lib/constants"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const GITHUB_REPO = "https://github.com/ausafulislam/Typing-Master"
 
@@ -72,6 +73,7 @@ export function Navbar() {
               <span className="hidden sm:inline">{link.label}</span>
             </Link>
           ))}
+          <ThemeToggle />
           <a
             href={GITHUB_REPO}
             target="_blank"

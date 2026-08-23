@@ -246,13 +246,13 @@ export default function LandingPage() {
               maxLength={20}
               className={`h-11 sm:h-12 border-2 text-center text-base sm:text-lg font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary ${
                 nameError
-                  ? "border-blue-500 focus-visible:border-blue-500"
+                  ? "border-primary focus-visible:border-primary"
                   : "border-foreground"
               }`}
             />
             {nameError && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-bold text-blue-600 text-center">
+                <p className="text-xs font-bold text-primary text-center">
                   This name has existing scores. Your best score will be updated.
                 </p>
                 {existingPlayerStats && (
