@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy, Keyboard } from "lucide-react"
+import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
@@ -102,6 +102,7 @@ export default function TypingGame() {
   const [scrollY, setScrollY] = useState(0)
   const [liveWpm, setLiveWpm] = useState(0)
   const [finalWpm, setFinalWpm] = useState<number | null>(null)
+  const [isTouchDevice, setIsTouchDevice] = useState(false)
   const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const soundOnRef = useRef(true)
@@ -117,6 +118,7 @@ export default function TypingGame() {
   const totalTypedRef = useRef(0)
   const caretElRef = useRef<HTMLSpanElement | null>(null)
   const textWrapperRef = useRef<HTMLDivElement | null>(null)
+  const hiddenInputRef = useRef<HTMLInputElement | null>(null)
 
   const clearTimeouts = useCallback(() => {
     timeoutsRef.current.forEach(clearTimeout)
@@ -137,6 +139,7 @@ export default function TypingGame() {
     setIsActive(false)
     setIsFinished(true)
     setShowResults(true)
+    hiddenInputRef.current?.blur()
   }, [])
 
   const resetGame = useCallback(
@@ -193,6 +196,10 @@ export default function TypingGame() {
     }
   }, [])
 
+  useEffect(() => {
+    setIsTouchDevice(window.matchMedia("(hover: none) and (pointer: coarse)").matches)
+  }, [])
+
   // Timer effect — wall-clock based so interval throttling/drift cannot extend the game.
   useEffect(() => {
     if (!isActive) return
@@ -240,23 +247,11 @@ export default function TypingGame() {
     setScrollY(Math.max(0, el.offsetTop - lineHeight))
   }, [currentIndex, sampleText])
 
-  // Handle key press — uses refs for values that change between renders
-  const handleKeyPress = useCallback(
-    (e: KeyboardEvent) => {
+  // Core per-character engine step — shared by physical keyboard, hidden input
+  // keydown, and mobile virtual-keyboard input fallback.
+  const processChar = useCallback(
+    (key: string) => {
       if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
-
-      // Don't hijack typing when focus is in a form field
-      const target = e.target as HTMLElement | null
-      if (target && target.closest("input, textarea, select, [contenteditable=true]")) return
-
-      // Ignore modified keys (shortcuts like Ctrl+C / Cmd+V / Alt+Tab) and key auto-repeat
-      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
-
-      const key = e.key
-      if (key.length > 1 && key !== " ") return
-
-      const isInteractiveTarget = Boolean(target?.closest('button, a[href], [role="button"]'))
-      if (key === " " && !isInteractiveTarget) e.preventDefault()
 
       if (!isActiveRef.current) {
         isActiveRef.current = true
@@ -291,6 +286,63 @@ export default function TypingGame() {
     },
     [finishGame],
   )
+
+  // Handle key press — uses refs for values that change between renders
+  const handleKeyPress = useCallback(
+    (e: KeyboardEvent) => {
+      if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
+
+      // Don't hijack typing when focus is in a form field (incl. the hidden input)
+      const target = e.target as HTMLElement | null
+      if (target && target.closest("input, textarea, select, [contenteditable=true]")) return
+
+      // Ignore modified keys (shortcuts like Ctrl+C / Cmd+V / Alt+Tab) and key auto-repeat
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+
+      const key = e.key
+      if (key.length > 1 && key !== " ") return
+
+      const isInteractiveTarget = Boolean(target?.closest('button, a[href], [role="button"]'))
+      if (key === " " && !isInteractiveTarget) e.preventDefault()
+
+      processChar(key)
+    },
+    [processChar],
+  )
+
+  // Keydown on the hidden capture input (focused after tap/click). preventDefault
+  // stops the character from being inserted so the input-event fallback below
+  // cannot double-process it.
+  const handleTypingKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+      const key = e.key
+      if (key.length > 1 && key !== " ") return
+      e.preventDefault()
+      processChar(key)
+    },
+    [processChar],
+  )
+
+  // Fallback for virtual keyboards that don't emit usable keydown events:
+  // read inserted characters straight from the input, then clear it.
+  const handleTypingInput = useCallback(
+    (e: React.FormEvent<HTMLInputElement>) => {
+      const el = e.currentTarget
+      const text = el.value
+      el.value = ""
+      if (!text) return
+      for (const ch of text) {
+        if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) break
+        processChar(ch)
+      }
+    },
+    [processChar],
+  )
+
+  const focusTypingArea = useCallback(() => {
+    hiddenInputRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyPress)
@@ -409,29 +461,6 @@ export default function TypingGame() {
 
   return (
     <div id="main-content" className="min-h-screen bg-background flex flex-col">
-
-      {/* Touch-device gate — pure CSS, no hydration flash */}
-      <div className="touch-gate flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md bg-card border-2 border-foreground shadow-brutal-lg p-8 flex flex-col items-center gap-6 text-center">
-          <div className="bg-foreground text-background p-3">
-            <Keyboard className="w-10 h-10" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Keyboard Required</h1>
-            <p className="text-muted-foreground font-medium leading-relaxed">
-              TypeMaster is a keyboard-only typing game and can&apos;t be played on touch devices. Open it on a
-              computer with a physical keyboard to start typing.
-            </p>
-          </div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 border-2 border-foreground bg-primary text-primary-foreground px-5 py-2.5 text-xs font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-          >
-            Back to Home
-          </Link>
-        </div>
-      </div>
-
       <div className="game-content flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
           {/* Header row: player + timer + sound */}
@@ -521,7 +550,10 @@ export default function TypingGame() {
           </div>
 
           {/* Text Display */}
-          <div className="bg-secondary p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
+          <div
+            className="bg-secondary p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden cursor-text"
+            onClick={focusTypingArea}
+          >
             <div
               ref={textWrapperRef}
               className="relative text-[1.6rem] sm:text-3xl font-mono leading-[1.9] tracking-wide transition-transform duration-300 ease-out will-change-transform"
@@ -547,12 +579,27 @@ export default function TypingGame() {
               ))}
             </div>
             {!isActive && !isFinished && currentIndex === 0 && (
-              <div className="absolute inset-x-0 bottom-4 flex justify-center">
+              <div className="absolute inset-x-0 bottom-4 flex justify-center pointer-events-none">
                 <span className="bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]">
-                  Start typing to begin
+                  {isTouchDevice ? "Tap here to start typing" : "Start typing to begin"}
                 </span>
               </div>
             )}
+            {/* Hidden capture input — summons the mobile keyboard; desktop typing
+                still flows through the window keydown listener */}
+            <input
+              ref={hiddenInputRef}
+              type="text"
+              aria-label="Typing input"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              className="absolute inset-0 w-full h-full opacity-0 text-base cursor-default"
+              onKeyDown={handleTypingKeyDown}
+              onInput={handleTypingInput}
+            />
           </div>
 
           {/* Progress Bar */}

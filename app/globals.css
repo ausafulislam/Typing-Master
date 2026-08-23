@@ -197,19 +197,6 @@
   border-radius: 9999px;
 }
 
-/* Touch-device gate for /game — pure CSS, SSR-safe (no hydration flash) */
-.touch-gate {
-  display: none;
-}
-@media (hover: none) and (pointer: coarse) {
-  .touch-gate {
-    display: flex;
-  }
-  .game-content {
-    display: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
