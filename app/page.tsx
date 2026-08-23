@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ArrowRight } from "lucide-react"
+import Link from "next/link"
 import { Leaderboard } from "@/components/leaderboard"
 import { getPlayerStats, checkNameExists } from "./actions"
 import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
@@ -293,6 +294,12 @@ export default function LandingPage() {
               {checkingName ? "Checking..." : "Start Typing"}
               <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
+            <Link
+              href="/game"
+              className="text-center text-[10px] font-black uppercase tracking-widest text-muted-foreground underline underline-offset-4 hover:text-primary transition-colors"
+            >
+              Just type — skip the name
+            </Link>
           </form>
         </DialogContent>
       </Dialog>

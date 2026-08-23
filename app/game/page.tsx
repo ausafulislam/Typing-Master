@@ -9,6 +9,7 @@ import Link from "next/link"
 import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
 import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
+import { calculateAccuracy, calculateProgress, calculateWpm } from "@/lib/wpm"
 
 const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
@@ -102,6 +103,7 @@ export default function TypingGame() {
   const [scrollY, setScrollY] = useState(0)
   const [liveWpm, setLiveWpm] = useState(0)
   const [finalWpm, setFinalWpm] = useState<number | null>(null)
+  const [finalElapsed, setFinalElapsed] = useState(0)
   const [isTouchDevice, setIsTouchDevice] = useState(false)
   const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -135,7 +137,8 @@ export default function TypingGame() {
     }
     const limit = timeLimitRef.current
     const elapsed = startedAtRef.current !== null ? Math.min((Date.now() - startedAtRef.current) / 1000, limit) : 0
-    setFinalWpm(elapsed > 0 ? Math.round(currentIndexRef.current / 5 / (elapsed / 60)) : 0)
+    setFinalElapsed(Math.max(1, Math.round(elapsed)))
+    setFinalWpm(calculateWpm(currentIndexRef.current, elapsed))
     setIsActive(false)
     setIsFinished(true)
     setShowResults(true)
@@ -165,6 +168,7 @@ export default function TypingGame() {
     setIsFinished(false)
     isFinishedRef.current = false
     setFinalWpm(null)
+    setFinalElapsed(0)
     setLiveWpm(0)
     setErrors(0)
     errorsRef.current = 0
@@ -215,9 +219,7 @@ export default function TypingGame() {
         setTimeLeft(Math.ceil(remaining))
         // Suppress unstable readings during the first seconds of a run
         setLiveWpm(
-          elapsed < WPM_STABILITY_THRESHOLD
-            ? 0
-            : Math.round(currentIndexRef.current / 5 / (elapsed / 60)),
+          elapsed < WPM_STABILITY_THRESHOLD ? 0 : calculateWpm(currentIndexRef.current, elapsed),
         )
       }
     }
@@ -354,8 +356,8 @@ export default function TypingGame() {
 
   // Live WPM is updated by the timer tick (state-driven, no render-time ref reads).
   const displayWpm = isFinished ? finalWpm ?? 0 : liveWpm
-  const accuracy = totalTyped > 0 ? Math.round((((totalTyped - errors) / totalTyped) * 100) * 10) / 10 : 100
-  const progress = sampleText.length > 0 ? Math.min(100, Math.round((currentIndex / sampleText.length) * 100)) : 0
+  const accuracy = calculateAccuracy(totalTyped, errors)
+  const progress = calculateProgress(currentIndex, sampleText.length)
 
   const changeTimeLimit = (newLimit: number) => {
     if (showResults) return
@@ -700,6 +702,23 @@ export default function TypingGame() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
                   {stat.label}
                 </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "Characters", value: totalTyped },
+              { label: "Duration", value: `${finalElapsed}s` },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="border-2 border-foreground bg-secondary px-4 py-3 shadow-brutal flex items-center justify-between gap-2"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                  {stat.label}
+                </span>
+                <span className="text-lg font-black font-mono tabular-nums">{stat.value}</span>
               </div>
             ))}
           </div>
