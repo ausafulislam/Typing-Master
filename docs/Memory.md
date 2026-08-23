@@ -21,7 +21,7 @@ After finishing a task or phase step:
 
 **Active phase:** Phase 1 — Core Typing Engine Polish
 **Last updated:** 2026-08-23
-**Next task:** Manual smoke test of Phase 1 on desktop + mobile viewport; then remaining polish items from Phases.md before declaring Phase 1 done.
+**Next task:** Phase 1 items implemented and verified (tsc/lint/build/smoke test pass, v0.6.0). Next: real-device mobile check of the typing input, then review Phase 1 exit criteria and move to Phase 2 auth groundwork.
 
 ---
 

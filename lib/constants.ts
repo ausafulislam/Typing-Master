@@ -1,6 +1,6 @@
 export const LEADERBOARD_PAGE_SIZE = 15
 
-export const APP_VERSION = "0.5.0"
+export const APP_VERSION = "0.6.0"
 
 export interface CertificateTier {
   name: string
