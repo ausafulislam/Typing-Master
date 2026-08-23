@@ -2,19 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy, Keyboard, ArrowLeft } from "lucide-react"
+import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy, Keyboard } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Navbar } from "@/components/navbar"
 import Link from "next/link"
 import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
-import { generateSuggestions } from "@/lib/name-utils"
+import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
 
 const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
-const CHARS_PER_LINE = 50
-const LINE_HEIGHT_REM = 3.4
 const WPM_STABILITY_THRESHOLD = 5
 
 const SAMPLE_TEXTS = {
@@ -63,10 +60,6 @@ const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
   { value: "punctuation", label: "Punct" },
   { value: "quotes", label: "Quotes" },
 ]
-function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined") return false
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
-}
 
 function safeLocalStorageGet(key: string): string | null {
   try {
@@ -102,12 +95,13 @@ export default function TypingGame() {
   const [editingName, setEditingName] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
-  const [isTouchDevice, setIsTouchDevice] = useState<boolean | null>(null)
   const [textMode, setTextMode] = useState<TextMode>("normal")
   const [nameError, setNameError] = useState(false)
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
-  const [checkingName, setCheckingName] = useState(false)
   const [newCertificates, setNewCertificates] = useState<{ tier: string; id: string }[]>([])
+  const [scrollY, setScrollY] = useState(0)
+  const [liveWpm, setLiveWpm] = useState(0)
+  const [finalWpm, setFinalWpm] = useState<number | null>(null)
   const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const soundOnRef = useRef(true)
@@ -117,37 +111,77 @@ export default function TypingGame() {
   const currentIndexRef = useRef(0)
   const sampleTextRef = useRef("")
   const isActiveRef = useRef(false)
+  const startedAtRef = useRef<number | null>(null)
+  const timeLimitRef = useRef(timeLimit)
+  const errorsRef = useRef(0)
+  const totalTypedRef = useRef(0)
+  const caretElRef = useRef<HTMLSpanElement | null>(null)
+  const textWrapperRef = useRef<HTMLDivElement | null>(null)
 
   const clearTimeouts = useCallback(() => {
     timeoutsRef.current.forEach(clearTimeout)
     timeoutsRef.current = []
   }, [])
 
-  const resetGame = useCallback(() => {
-    clearTimeouts()
+  const finishGame = useCallback(() => {
+    if (isFinishedRef.current) return
+    isFinishedRef.current = true
+    isActiveRef.current = false
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    const texts = SAMPLE_TEXTS[textMode]
-    const randomText = texts[Math.floor(Math.random() * texts.length)]
-    setSampleText(randomText)
-    sampleTextRef.current = randomText
-    setCurrentIndex(0)
-    currentIndexRef.current = 0
-    setTimeLeft(timeLimit)
+    const limit = timeLimitRef.current
+    const elapsed = startedAtRef.current !== null ? Math.min((Date.now() - startedAtRef.current) / 1000, limit) : 0
+    setFinalWpm(elapsed > 0 ? Math.round(currentIndexRef.current / 5 / (elapsed / 60)) : 0)
+    setIsActive(false)
+    setIsFinished(true)
+    setShowResults(true)
+  }, [])
+
+  const resetGame = useCallback(
+    (overrides?: { timeLimit?: number; textMode?: TextMode }) => {
+      clearTimeouts()
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+      const mode = overrides?.textMode ?? textMode
+      const texts = SAMPLE_TEXTS[mode]
+      const randomText = texts[Math.floor(Math.random() * texts.length)]
+      setSampleText(randomText)
+      sampleTextRef.current = randomText
+      setCurrentIndex(0)
+      currentIndexRef.current = 0
+      const limit = overrides?.timeLimit ?? timeLimit
+      setTimeLeft(limit)
+      timeLimitRef.current = limit
     setIsActive(false)
     isActiveRef.current = false
+    startedAtRef.current = null
     setIsFinished(false)
     isFinishedRef.current = false
+    setFinalWpm(null)
+    setLiveWpm(0)
     setErrors(0)
+    errorsRef.current = 0
     setTotalTyped(0)
+    totalTypedRef.current = 0
     setPressedKey(null)
     setErrorFlash(false)
     setShowResults(false)
     setHasSaved(false)
     setSaveFeedback(null)
-  }, [timeLimit, textMode, clearTimeouts])
+    setScrollY(0)
+    caretElRef.current = null
+    },
+    [timeLimit, textMode, clearTimeouts],
+  )
+
+  // Initial text generation — mount only (handlers reset directly afterwards).
+  useEffect(() => {
+    resetGame()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const storedNickname = safeLocalStorageGet(NAME_KEY)
@@ -159,35 +193,30 @@ export default function TypingGame() {
     }
   }, [])
 
+  // Timer effect — wall-clock based so interval throttling/drift cannot extend the game.
   useEffect(() => {
-    setIsTouchDevice(window.matchMedia("(hover: none) and (pointer: coarse)").matches)
-  }, [])
+    if (!isActive) return
 
-  useEffect(() => {
-    resetGame()
-  }, [resetGame])
-
-  // Timer effect — ref-based, only depends on isActive
-  useEffect(() => {
-    if (!isActive) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
+    const tick = () => {
+      if (startedAtRef.current === null) return
+      const elapsed = (Date.now() - startedAtRef.current) / 1000
+      const remaining = timeLimitRef.current - elapsed
+      if (remaining <= 0) {
+        setTimeLeft(0)
+        finishGame()
+      } else {
+        setTimeLeft(Math.ceil(remaining))
+        // Suppress unstable readings during the first seconds of a run
+        setLiveWpm(
+          elapsed < WPM_STABILITY_THRESHOLD
+            ? 0
+            : Math.round(currentIndexRef.current / 5 / (elapsed / 60)),
+        )
       }
-      return
     }
 
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current!)
-          timerRef.current = null
-          isFinishedRef.current = true
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
+    tick()
+    timerRef.current = setInterval(tick, 250)
 
     return () => {
       if (timerRef.current) {
@@ -195,58 +224,72 @@ export default function TypingGame() {
         timerRef.current = null
       }
     }
-  }, [isActive])
+  }, [isActive, finishGame])
 
-  // Handle game end separately from timer to avoid side effects in state updater
+  // Keep the caret line in view by measuring its real rendered position.
   useEffect(() => {
-    if (timeLeft === 0 && isActive) {
-      setIsActive(false)
-      isActiveRef.current = false
-      setIsFinished(true)
-      setShowResults(true)
+    const el = caretElRef.current
+    const wrapper = textWrapperRef.current
+    if (!el || !wrapper) {
+      setScrollY(0)
+      return
     }
-  }, [timeLeft, isActive])
+    const style = getComputedStyle(wrapper)
+    const lineHeight =
+      parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.9 || 54
+    setScrollY(Math.max(0, el.offsetTop - lineHeight))
+  }, [currentIndex, sampleText])
 
   // Handle key press — uses refs for values that change between renders
   const handleKeyPress = useCallback(
     (e: KeyboardEvent) => {
       if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
 
+      // Don't hijack typing when focus is in a form field
+      const target = e.target as HTMLElement | null
+      if (target && target.closest("input, textarea, select, [contenteditable=true]")) return
+
+      // Ignore modified keys (shortcuts like Ctrl+C / Cmd+V / Alt+Tab) and key auto-repeat
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+
       const key = e.key
       if (key.length > 1 && key !== " ") return
 
-      if (key === " ") e.preventDefault()
+      const isInteractiveTarget = Boolean(target?.closest('button, a[href], [role="button"]'))
+      if (key === " " && !isInteractiveTarget) e.preventDefault()
 
       if (!isActiveRef.current) {
-        setIsActive(true)
         isActiveRef.current = true
+        startedAtRef.current = Date.now()
+        setIsActive(true)
       }
 
       setPressedKey(key === " " ? "Space" : key.toLowerCase())
       const pressTimeout = setTimeout(() => setPressedKey(null), 150)
       timeoutsRef.current.push(pressTimeout)
 
-      if (!prefersReducedMotion()) {
-        // nothing — flash state still updates for accessibility
-      }
-
       const expectedChar = sampleTextRef.current[currentIndexRef.current]
-      setTotalTyped((prev) => prev + 1)
+      totalTypedRef.current += 1
+      setTotalTyped(totalTypedRef.current)
 
       if (key === expectedChar) {
         if (soundOnRef.current) playKeySound(key === " " ? "space" : "key")
         const newIndex = currentIndexRef.current + 1
         setCurrentIndex(newIndex)
         currentIndexRef.current = newIndex
+        if (newIndex >= sampleTextRef.current.length) {
+          finishGame()
+        }
       } else {
         if (soundOnRef.current) playKeySound("error")
-        setErrors((prev) => prev + 1)
+        errorsRef.current += 1
+        setErrors(errorsRef.current)
         setErrorFlash(true)
         const errorTimeout = setTimeout(() => setErrorFlash(false), 150)
         timeoutsRef.current.push(errorTimeout)
       }
     },
-    [],
+    [finishGame],
   )
 
   useEffect(() => {
@@ -257,35 +300,21 @@ export default function TypingGame() {
     }
   }, [handleKeyPress, clearTimeouts])
 
-  // Pause timer when tab is hidden
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden && isActiveRef.current) {
-        // Browsers throttle intervals in background tabs.
-        // We let the interval keep running but the timer may drift.
-        // For a game this is acceptable — the user shouldn't tab away mid-game.
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility)
-    return () => document.removeEventListener("visibilitychange", handleVisibility)
-  }, [])
-
-  const elapsed = timeLimit - timeLeft
-  const wpm = elapsed > 0 ? Math.round(currentIndex / 5 / (elapsed / 60)) : 0
-  const displayWpm = elapsed < WPM_STABILITY_THRESHOLD && wpm > 0 ? 0 : wpm
+  // Live WPM is updated by the timer tick (state-driven, no render-time ref reads).
+  const displayWpm = isFinished ? finalWpm ?? 0 : liveWpm
   const accuracy = totalTyped > 0 ? Math.round((((totalTyped - errors) / totalTyped) * 100) * 10) / 10 : 100
-  const progress = sampleText.length > 0 ? Math.round((currentIndex / sampleText.length) * 100) : 0
+  const progress = sampleText.length > 0 ? Math.min(100, Math.round((currentIndex / sampleText.length) * 100)) : 0
 
   const changeTimeLimit = (newLimit: number) => {
     if (showResults) return
     setTimeLimit(newLimit)
-    setTimeLeft(newLimit)
-    resetGame()
+    resetGame({ timeLimit: newLimit })
   }
 
   const changeTextMode = (newMode: TextMode) => {
     if (showResults) return
     setTextMode(newMode)
+    resetGame({ textMode: newMode })
   }
 
   const toggleSound = () => {
@@ -307,56 +336,57 @@ export default function TypingGame() {
     if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     const trimmed = value.trim()
     if (!trimmed || trimmed.length < 2) {
-      setCheckingName(false)
       return
     }
-    setCheckingName(true)
     nameDebounceTimer.current = setTimeout(() => {
       checkNameExists(trimmed).then((exists) => {
         setNameError(exists)
         setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
-        setCheckingName(false)
       })
     }, 400)
   }
 
   const checkCurrentName = useCallback(() => {
+    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     const trimmed = nickname.trim()
     if (!trimmed || trimmed.length < 2) {
       setNameError(false)
       setNameSuggestions([])
       return
     }
-    setCheckingName(true)
     checkNameExists(trimmed).then((exists) => {
       setNameError(exists)
       setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
-      setCheckingName(false)
     })
   }, [nickname])
 
   const persistName = () => {
-    if (nickname.trim()) {
-      safeLocalStorageSet(NAME_KEY, nickname.trim())
+    const sanitized = sanitizeName(nickname)
+    if (sanitized) {
+      setNickname(sanitized)
+      safeLocalStorageSet(NAME_KEY, sanitized)
     }
   }
 
   const handleSaveSession = async () => {
-    if (!nickname.trim()) return
+    const sanitized = sanitizeName(nickname)
+    if (!sanitized) return
     setIsSaving(true)
     setSaveFeedback(null)
     setNewCertificates([])
     try {
-      const result = await saveGameSession({ name: nickname, duration: timeLimit, wpm: displayWpm, accuracy, errors, textMode })
+      const wpmToSave = finalWpm ?? displayWpm
+      const result = await saveGameSession({ name: sanitized, duration: timeLimit, wpm: wpmToSave, accuracy, errors, textMode })
       if (result.success) {
         if (result.saved) {
           setHasSaved(true)
-          safeLocalStorageSet(NAME_KEY, nickname.trim())
-          const certs = await awardCertificates(nickname.trim(), displayWpm, accuracy)
+          safeLocalStorageSet(NAME_KEY, sanitized)
+          const certs = await awardCertificates(sanitized, wpmToSave, accuracy)
           if (certs.length > 0) {
             setNewCertificates(certs)
           }
         } else {
+          setHasSaved(true)
           setSaveFeedback("Your best score is higher — this run wasn't saved.")
         }
       } else {
@@ -370,19 +400,18 @@ export default function TypingGame() {
     }
   }
 
-  if (isTouchDevice === null) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="border-2 border-foreground bg-card px-6 py-4 shadow-brutal text-center">
-          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
+  const liveStats = [
+    { label: "WPM", value: displayWpm },
+    { label: "Accuracy", value: `${accuracy}%` },
+    { label: "Errors", value: errors },
+    { label: "Progress", value: `${progress}%` },
+  ]
 
-  if (isTouchDevice) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+  return (
+    <div id="main-content" className="min-h-screen bg-background flex flex-col">
+
+      {/* Touch-device gate — pure CSS, no hydration flash */}
+      <div className="touch-gate flex-1 items-center justify-center p-6">
         <div className="w-full max-w-md bg-card border-2 border-foreground shadow-brutal-lg p-8 flex flex-col items-center gap-6 text-center">
           <div className="bg-foreground text-background p-3">
             <Keyboard className="w-10 h-10" />
@@ -398,53 +427,43 @@ export default function TypingGame() {
             href="/"
             className="inline-flex items-center gap-2 border-2 border-foreground bg-primary text-primary-foreground px-5 py-2.5 text-xs font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
           >
-            <ArrowLeft className="w-4 h-4" />
             Back to Home
           </Link>
         </div>
       </div>
-    )
-  }
 
-  const liveStats = [
-    { label: "WPM", value: displayWpm },
-    { label: "Accuracy", value: `${accuracy}%` },
-    { label: "Errors", value: errors },
-    { label: "Progress", value: `${progress}%` },
-  ]
-
-  return (
-    <div id="main-content" className="min-h-screen bg-background flex flex-col">
-      <Navbar
-        rightContent={
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={toggleSound}
-              aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
-              aria-pressed={soundOn}
-              className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
-                soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-              }`}
-            >
-              {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-            </button>
-            <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
-              <p className="text-3xl font-black font-mono leading-none tabular-nums">
-                {String(timeLeft).padStart(2, "0")}
+      <div className="game-content flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
+          {/* Header row: player + timer + sound */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
+                Player
+              </span>
+              <p className="text-sm sm:text-base font-black uppercase tracking-tight text-foreground truncate">
+                {sanitizeName(nickname) || "Guest"}
               </p>
             </div>
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <button
+                onClick={toggleSound}
+                aria-label={soundOn ? "Mute keyboard sound" : "Unmute keyboard sound"}
+                aria-pressed={soundOn}
+                className={`border-2 border-foreground p-2.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${
+                  soundOn ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+                }`}
+              >
+                {soundOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+              </button>
+              <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
+                <p className="text-3xl font-black font-mono leading-none tabular-nums">
+                  {String(timeLeft).padStart(2, "0")}
+                </p>
+              </div>
+            </div>
           </div>
-        }
-      />
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="w-full max-w-5xl bg-card border-2 border-foreground shadow-brutal-lg p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8">
-          {/* Player Name */}
-          {nickname && (
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary leading-none">
-              Player: {nickname}
-            </p>
-          )}
+
           {/* Controls Row */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex gap-2">
@@ -486,132 +505,134 @@ export default function TypingGame() {
             </div>
           </div>
 
-        {/* Live Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {liveStats.map((stat) => (
-            <div
-              key={stat.label}
-              className="border-2 border-foreground bg-secondary px-4 py-3 shadow-brutal flex flex-col gap-1.5"
-            >
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
-                {stat.label}
-              </p>
-              <p className="text-2xl font-black font-mono text-foreground leading-none tabular-nums">{stat.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Text Display */}
-        <div className="bg-secondary p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
-          <div
-            className="text-[1.6rem] sm:text-3xl font-mono leading-[1.9] tracking-wide transition-transform duration-300 ease-out"
-            style={{ transform: `translateY(-${Math.floor(currentIndex / CHARS_PER_LINE) * LINE_HEIGHT_REM}rem)` }}
-          >
-            {sampleText.split("").map((char, idx) => (
-              <span
-                key={idx}
-                className={`relative ${
-                  idx < currentIndex
-                    ? "text-primary font-bold"
-                    : idx === currentIndex && errorFlash
-                      ? "text-destructive-foreground bg-destructive"
-                      : "text-muted-foreground/45"
-                }`}
-              >
-                {idx === currentIndex && !isFinished && (
-                  <span className="absolute -left-0.5 top-1 bottom-1 w-[3px] bg-primary blink" />
-                )}
-                {char}
-              </span>
-            ))}
-          </div>
-          {!isActive && !isFinished && currentIndex === 0 && (
-            <div className="absolute inset-x-0 bottom-4 flex justify-center">
-              <span className="bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]">
-                Start typing to begin
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Progress Bar */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-2 bg-secondary overflow-hidden">
-            <div
-              className="h-full bg-primary transition-all duration-200 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <span className="text-xs font-black font-mono tabular-nums text-muted-foreground w-10 text-right">
-            {progress}%
-          </span>
-        </div>
-
-        {/* Controls */}
-        <div className="flex justify-center gap-3 flex-wrap">
-          <Button
-            onClick={resetGame}
-            className="h-11 gap-2 border-2 border-foreground bg-card text-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none hover:bg-secondary transition-brutal"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Restart
-          </Button>
-          {isFinished && !showResults && (
-            <Button
-              onClick={() => setShowResults(true)}
-              className="h-11 gap-2 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-            >
-              <BarChart3 className="w-4 h-4" />
-              View Results
-            </Button>
-          )}
-        </div>
-
-        {/* Visual Keyboard */}
-        <div className="bg-foreground border-2 border-foreground p-4 sm:p-6">
-          <div className="flex flex-col gap-2 sm:gap-2.5">
-            {KEYBOARD_LAYOUT.map((row, rowIdx) => (
-              <div key={rowIdx} className="flex justify-center gap-1.5 sm:gap-2.5">
-                {row.map((key) => {
-                  const isPressed = pressedKey === key
-                  const isError = isPressed && errorFlash
-                  return (
-                    <div
-                      key={key}
-                      className={`w-[8.5vw] h-[8.5vw] max-w-14 max-h-14 sm:w-14 sm:h-14 flex items-center justify-center border-2 font-mono text-sm sm:text-lg font-black transition-brutal-fast ${
-                        isPressed
-                          ? `translate-x-0.5 translate-y-0.5 border-background ${
-                              isError
-                                ? "bg-destructive text-destructive-foreground"
-                                : "bg-primary text-primary-foreground"
-                            }`
-                          : "bg-card text-foreground border-background shadow-[3px_3px_0_0_var(--primary)]"
-                      }`}
-                    >
-                      {key.toUpperCase()}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-            <div className="flex justify-center pt-1">
+          {/* Live Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {liveStats.map((stat) => (
               <div
-                className={`w-2/3 max-w-96 h-11 sm:h-14 flex items-center justify-center border-2 font-mono text-[11px] font-black uppercase tracking-[0.3em] transition-brutal-fast ${
-                  pressedKey === "Space"
-                    ? `translate-x-0.5 translate-y-0.5 border-background ${
-                        errorFlash
-                          ? "bg-destructive text-destructive-foreground"
-                          : "bg-primary text-primary-foreground"
-                      }`
-                    : "bg-card text-foreground border-background shadow-[3px_3px_0_0_var(--primary)]"
-                }`}
+                key={stat.label}
+                className="border-2 border-foreground bg-secondary px-4 py-3 shadow-brutal flex flex-col gap-1.5"
               >
-                Space
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
+                  {stat.label}
+                </p>
+                <p className="text-2xl font-black font-mono text-foreground leading-none tabular-nums">{stat.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Text Display */}
+          <div className="bg-secondary p-6 sm:p-8 h-[200px] sm:h-[220px] relative overflow-hidden">
+            <div
+              ref={textWrapperRef}
+              className="relative text-[1.6rem] sm:text-3xl font-mono leading-[1.9] tracking-wide transition-transform duration-300 ease-out will-change-transform"
+              style={{ transform: `translateY(-${scrollY}px)` }}
+            >
+              {sampleText.split("").map((char, idx) => (
+                <span
+                  key={idx}
+                  ref={idx === currentIndex ? caretElRef : undefined}
+                  className={`relative ${
+                    idx < currentIndex
+                      ? "text-primary font-bold"
+                      : idx === currentIndex && errorFlash
+                        ? "text-destructive-foreground bg-destructive"
+                        : "text-muted-foreground/45"
+                  }`}
+                >
+                  {idx === currentIndex && !isFinished && (
+                    <span className="absolute -left-0.5 top-1 bottom-1 w-[3px] bg-primary blink" />
+                  )}
+                  {char}
+                </span>
+              ))}
+            </div>
+            {!isActive && !isFinished && currentIndex === 0 && (
+              <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                <span className="bg-card px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em]">
+                  Start typing to begin
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Progress Bar */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-2 bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-200 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-xs font-black font-mono tabular-nums text-muted-foreground w-10 text-right">
+              {progress}%
+            </span>
+          </div>
+
+          {/* Controls */}
+          <div className="flex justify-center gap-3 flex-wrap">
+            <Button
+              onClick={() => resetGame()}
+              className="h-11 gap-2 border-2 border-foreground bg-card text-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none hover:bg-secondary transition-brutal"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Restart
+            </Button>
+            {isFinished && !showResults && (
+              <Button
+                onClick={() => setShowResults(true)}
+                className="h-11 gap-2 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+              >
+                <BarChart3 className="w-4 h-4" />
+                View Results
+              </Button>
+            )}
+          </div>
+
+          {/* Visual Keyboard */}
+          <div className="bg-foreground border-2 border-foreground p-4 sm:p-6">
+            <div className="flex flex-col gap-2 sm:gap-2.5">
+              {KEYBOARD_LAYOUT.map((row, rowIdx) => (
+                <div key={rowIdx} className="flex justify-center gap-1.5 sm:gap-2.5">
+                  {row.map((key) => {
+                    const isPressed = pressedKey === key
+                    const isError = isPressed && errorFlash
+                    return (
+                      <div
+                        key={key}
+                        className={`w-[8.5vw] h-[8.5vw] max-w-14 max-h-14 sm:w-14 sm:h-14 flex items-center justify-center border-2 font-mono text-sm sm:text-lg font-black transition-brutal-fast ${
+                          isPressed
+                            ? `translate-x-0.5 translate-y-0.5 border-background ${
+                                isError
+                                  ? "bg-destructive text-destructive-foreground"
+                                  : "bg-primary text-primary-foreground"
+                              }`
+                            : "bg-card text-foreground border-background shadow-[3px_3px_0_0_var(--primary)]"
+                        }`}
+                      >
+                        {key.toUpperCase()}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+              <div className="flex justify-center pt-1">
+                <div
+                  className={`w-2/3 max-w-96 h-11 sm:h-14 flex items-center justify-center border-2 font-mono text-[11px] font-black uppercase tracking-[0.3em] transition-brutal-fast ${
+                    pressedKey === "Space"
+                      ? `translate-x-0.5 translate-y-0.5 border-background ${
+                          errorFlash
+                            ? "bg-destructive text-destructive-foreground"
+                            : "bg-primary text-primary-foreground"
+                        }`
+                      : "bg-card text-foreground border-background shadow-[3px_3px_0_0_var(--primary)]"
+                  }`}
+                >
+                  Space
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
 
       {/* Results Dialog */}
@@ -740,7 +761,7 @@ export default function TypingGame() {
                 )}
               </Button>
               <Button
-                onClick={resetGame}
+                onClick={() => resetGame()}
                 className="flex-1 h-11 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />

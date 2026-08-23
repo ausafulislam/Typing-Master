@@ -38,8 +38,8 @@
 }
 
 @theme inline {
-  --font-sans: "Geist", "Geist Fallback";
-  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -158,6 +158,19 @@
   background: var(--border);
   border: 2px solid var(--secondary);
   border-radius: 9999px;
+}
+
+/* Touch-device gate for /game — pure CSS, SSR-safe (no hydration flash) */
+.touch-gate {
+  display: none;
+}
+@media (hover: none) and (pointer: coarse) {
+  .touch-gate {
+    display: flex;
+  }
+  .game-content {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

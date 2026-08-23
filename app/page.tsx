@@ -7,12 +7,11 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { ArrowRight, Keyboard } from "lucide-react"
-import Link from "next/link"
+import { ArrowRight } from "lucide-react"
 import { Leaderboard } from "@/components/leaderboard"
-import { Navbar } from "@/components/navbar"
 import { getPlayerStats, checkNameExists } from "./actions"
-import { generateSuggestions } from "@/lib/name-utils"
+import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
+import { APP_VERSION } from "@/lib/constants"
 
 const NAME_KEY = "typing-game-nickname"
 
@@ -40,9 +39,8 @@ export default function LandingPage() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [savedName, setSavedName] = useState<string | null>(() => safeGetItem(NAME_KEY))
+  const [savedName, setSavedName] = useState<string | null>(null)
   const [stats, setStats] = useState<PlayerStats | null>(null)
-  const [stars, setStars] = useState<number | null>(null)
   const [nameError, setNameError] = useState(false)
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
   const [checkingName, setCheckingName] = useState(false)
@@ -66,19 +64,6 @@ export default function LandingPage() {
       })
     return () => { cancelled = true }
   }, [savedName])
-
-  useEffect(() => {
-    let cancelled = false
-    fetch("https://api.github.com/repos/ausafulislam/Typing-Master")
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled && typeof data.stargazers_count === "number") {
-          setStars(data.stargazers_count)
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -140,17 +125,12 @@ export default function LandingPage() {
     e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    safeSetItem(NAME_KEY, trimmed)
+    safeSetItem(NAME_KEY, sanitizeName(trimmed) || trimmed)
     router.push("/game")
   }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar
-        onStartClick={() => setOpen(true)}
-        savedName={savedName}
-        stars={stars}
-      />
 
       {/* Main */}
       <main id="main-content" className="flex-1">
@@ -162,7 +142,7 @@ export default function LandingPage() {
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="border-2 border-foreground bg-foreground text-background w-fit px-3 py-1 text-[10px] font-black uppercase tracking-widest">
-                    v0.3.0
+                    v{APP_VERSION}
                   </span>
                   <span className="border-2 border-foreground bg-card px-3 py-1 text-[10px] font-black uppercase tracking-widest shadow-brutal">
                     No sign-in required
@@ -196,7 +176,7 @@ export default function LandingPage() {
                   </div>
                   <div className="border-2 border-foreground bg-card p-3 sm:p-5 shadow-brutal flex flex-col gap-1">
                     <span className="text-2xl sm:text-4xl font-black font-mono leading-none tabular-nums text-primary">
-                      {stats?.accuracy ?? 0}%
+                      {stats ? `${stats.accuracy}%` : "—"}
                     </span>
                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       Accuracy
@@ -204,7 +184,7 @@ export default function LandingPage() {
                   </div>
                   <div className="border-2 border-foreground bg-card p-3 sm:p-5 shadow-brutal flex flex-col gap-1">
                     <span className="text-2xl sm:text-4xl font-black font-mono leading-none tabular-nums text-primary">
-                      #{stats?.rank ?? 0}
+                      {stats ? `#${stats.rank}` : "—"}
                     </span>
                     <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       Rank
@@ -240,29 +220,6 @@ export default function LandingPage() {
           </section>
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground border-2 border-foreground p-1">
-              <Keyboard className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-xs sm:text-sm font-black uppercase tracking-tight">TypeMaster</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/verify"
-              className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Verify Certificate
-            </Link>
-            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              &copy; 2026 Ausaf Ul Islam
-            </p>
-          </div>
-        </div>
-      </footer>
 
       {/* Name Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

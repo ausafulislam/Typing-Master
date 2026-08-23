@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { RotateCcw } from "lucide-react"
 
-export default function GameError({
+export default function GlobalError({
   error,
   reset,
 }: {
@@ -13,7 +13,7 @@ export default function GameError({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error("Game page error:", error)
+    console.error("Unhandled app error:", error)
   }, [error])
 
   return (
@@ -25,7 +25,7 @@ export default function GameError({
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-black uppercase tracking-tight text-foreground">Something went wrong</h1>
           <p className="text-muted-foreground font-medium leading-relaxed">
-            The typing game hit an unexpected error. You can try again or go back to the home page.
+            An unexpected error occurred. You can try again or head back to the home page.
           </p>
         </div>
         <div className="flex gap-3">

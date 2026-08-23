@@ -60,9 +60,26 @@ export function Leaderboard() {
   }, [])
 
   useEffect(() => {
-    fetchPage(1)
-    return () => abortRef.current?.abort()
-  }, [fetchPage])
+    let cancelled = false
+    // Initial load: `loading` already starts as true, and every setState here
+    // happens after the await (no synchronous updates in the effect body).
+    getLeaderboard(1)
+      .then((result) => {
+        if (!cancelled) setData(result)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setData({ entries: [], page: 1, hasMore: false, error: "Failed to load leaderboard" })
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+      abortRef.current?.abort()
+    }
+  }, [])
 
   const currentPage = data?.page ?? 1
   const entries = data?.entries ?? []

@@ -1,21 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
-import { ArrowLeft, Keyboard, ShieldCheck, ShieldX, Loader2 } from "lucide-react"
-import { Navbar } from "@/components/navbar"
-import { verifyCertificate } from "../actions"
+import { ShieldCheck, ShieldX, Loader2 } from "lucide-react"
+import { verifyCertificate, type CertificateRecord } from "../actions"
 import { CERTIFICATE_TIERS } from "@/lib/constants"
-
-interface VerifyResult {
-  valid: boolean
-  id: string
-  name: string
-  tier: string
-  wpm: number
-  accuracy: number
-  date: string
-}
 
 function getTierColor(tier: string): string {
   const t = CERTIFICATE_TIERS.find((ct) => ct.name === tier)
@@ -30,7 +18,7 @@ function formatDate(dateStr: string): string {
 export default function VerifyPage() {
   const [input, setInput] = useState("")
   const [checking, setChecking] = useState(false)
-  const [result, setResult] = useState<VerifyResult | null>(null)
+  const [result, setResult] = useState<CertificateRecord | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [hasChecked, setHasChecked] = useState(false)
 
@@ -79,19 +67,6 @@ export default function VerifyPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar
-        rightContent={
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Home</span>
-            </Link>
-          </div>
-        }
-      />
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-lg flex flex-col gap-8">
@@ -186,21 +161,6 @@ export default function VerifyPage() {
           )}
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t-2 border-foreground bg-card">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground border-2 border-foreground p-1">
-              <Keyboard className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-xs sm:text-sm font-black uppercase tracking-tight">TypeMaster</span>
-          </div>
-          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            &copy; 2026 Ausaf Ul Islam
-          </p>
-        </div>
-      </footer>
     </div>
   )
 }

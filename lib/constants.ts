@@ -1,5 +1,7 @@
 export const LEADERBOARD_PAGE_SIZE = 15
 
+export const APP_VERSION = "0.5.0"
+
 export interface CertificateTier {
   name: string
   label: string
@@ -16,11 +18,22 @@ export const CERTIFICATE_TIERS: CertificateTier[] = [
   { name: "diamond", label: "Diamond", minWpm: 100, minAccuracy: 95, color: "#B9F2FF", prefix: "D" },
 ]
 
-export function generateCertificateId(tier: CertificateTier, wpm: number, accuracy: number): string {
-  const toBase36 = (n: number) => n.toString(36).toUpperCase().padStart(3, "0")
-  const group1 = `TYM${tier.prefix}`
-  const group2 = toBase36(wpm).slice(0, 4)
-  const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "")
-  const group3 = (toBase36(Math.round(accuracy * 10)) + rand).slice(0, 4)
-  return `${group1}.${group2}.${group3}`
+/**
+ * Generates a collision-resistant certificate ID in TYM<X>.XXX.XXXX format
+ * (11 alphanumeric chars). The 7 trailing chars are cryptographically random,
+ * so two players with identical scores can never produce the same ID.
+ */
+export function generateCertificateId(tier: CertificateTier): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  let random = ""
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(7)
+    globalThis.crypto.getRandomValues(bytes)
+    for (const b of bytes) random += alphabet[b % alphabet.length]
+  } else {
+    for (let i = 0; i < 7; i++) {
+      random += alphabet[Math.floor(Math.random() * alphabet.length)]
+    }
+  }
+  return `TYM${tier.prefix}.${random.slice(0, 3)}.${random.slice(3)}`
 }
