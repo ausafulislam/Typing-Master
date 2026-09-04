@@ -19,13 +19,21 @@ After finishing a task or phase step:
 
 ## Current Status
 
-**Active phase:** Phase 1 — Core Typing Engine Polish
-**Last updated:** 2026-08-23
-**Next task:** Real-device mobile check of the typing input; then review Phase 1 exit criteria and move to Phase 2 auth groundwork.
+**Active phase:** Phase 1 — Core Typing Engine Polish (nearly complete)
+**Last updated:** 2026-09-04
+**Next task:** Phase 1 is functionally complete. Dark palette polished (v0.8.0). Next: real-device mobile check on a phone to confirm touch input feels right, then move to Phase 2 auth groundwork.
 
 ---
 
 ## Log
+
+### 2026-09-04 — Dark theme palette polish (v0.8.0)
+**Phase:** Phase 1 (polish)
+**Done:**
+- Softened dark palette: foreground dimmed from `#fafafa` to `#e8e8ec` (fixes brutal-shadow glow and blinding inverted slabs like keyboard/timer in one lever — both use `var(--foreground)`), borders changed to `#a1a1aa` (softer gray), surfaces stepped: bg `#0a0a0a` → card `#16161a` → secondary `#232329`, muted-foreground brightened to `#b4b4bc`
+- Zero component class changes — entire fix via CSS variables only
+
+**Known limitation (acceptable):** keyboard container, timer, and profile headers still use `bg-foreground` inversion — now light-gray instead of blinding white. Full un-inversion needs component edits; can be done later if user still wants it after seeing this fix.
 
 ### 2026-08-23 — Zero-warning lint + leaderboard cap (v0.7.0)
 **Phase:** Phase 1 (polish)
@@ -61,7 +69,6 @@ After finishing a task or phase step:
 - Leaderboard uses legacy name-based schema (`game_sessions`), will be migrated to account-based in Phase 3.
 - Legacy certificate system (bronze/silver/gold/diamond + `/verify` + `/certificate/[id]`) predates the PRD; kept functional but not part of any active phase. Revisit in Phase 5/6.
 - `submit_game_session` trusts client-computed WPM/accuracy (range-validates only). Server-side recomputation from raw keystrokes lands in Phase 3.
-- ESLint has ~9 pre-existing `react-hooks/set-state-in-effect` warnings (localStorage reads on mount). Cosmetic, not blocking.
 
 ---
 
@@ -70,4 +77,4 @@ After finishing a task or phase step:
 - Google + GitHub OAuth only, no email/password, to reduce auth maintenance surface (see Rules.md #3).
 - Hand-rolled ThemeProvider instead of adding `next-themes`: keeps dependency count at zero new packages per Rules.md §2; theme key is `tmx-theme` in localStorage.
 - Touch devices were previously hard-blocked with a "Keyboard Required" gate; replaced with a hidden-input capture approach so mobile users can actually play (Phase 1 requirement).
-- Dark palette follows Design.md exactly (`#0A0A0A` bg / `#141414` card / `#F5F5F5` borders / blue accent); secondary surface darkens to `#1E1E1E` following shadcn's raised-surface convention.
+- Dark palette uses softened tones (foreground `#e8e8ec`, borders `#a1a1aa`, surfaces `#0a0a0a`/`#16161a`/`#232329`) to avoid the glare issues of pure-white borders/shadows on near-black backgrounds.

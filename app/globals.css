@@ -40,26 +40,26 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Dark theme — Design.md palette: #0A0A0A bg, #141414 card, #F5F5F5 borders, blue accent */
+/* Dark theme — softened palette: gray borders, dimmed foreground (fixes glow/shadows/slabs), stepped surfaces */
 .dark {
   --background: #0a0a0a;
-  --foreground: #fafafa;
-  --card: #141414;
-  --card-foreground: #fafafa;
-  --popover: #141414;
-  --popover-foreground: #fafafa;
+  --foreground: #e8e8ec;
+  --card: #16161a;
+  --card-foreground: #e8e8ec;
+  --popover: #1c1c21;
+  --popover-foreground: #e8e8ec;
   --primary: #3b82f6;
   --primary-foreground: #ffffff;
-  --secondary: #1e1e1e;
-  --secondary-foreground: #fafafa;
-  --muted: #1e1e1e;
-  --muted-foreground: #a3a3a3;
-  --accent: #1e1e1e;
-  --accent-foreground: #fafafa;
+  --secondary: #232329;
+  --secondary-foreground: #e8e8ec;
+  --muted: #232329;
+  --muted-foreground: #b4b4bc;
+  --accent: #232329;
+  --accent-foreground: #e8e8ec;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #f5f5f5;
-  --input: #f5f5f5;
+  --border: #a1a1aa;
+  --input: #a1a1aa;
   --ring: #3b82f6;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -67,13 +67,13 @@
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   color-scheme: dark;
-  --sidebar: #141414;
-  --sidebar-foreground: #fafafa;
+  --sidebar: #16161a;
+  --sidebar-foreground: #e8e8ec;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1e1e;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #f5f5f5;
+  --sidebar-accent: #232329;
+  --sidebar-accent-foreground: #e8e8ec;
+  --sidebar-border: #a1a1aa;
   --sidebar-ring: #3b82f6;
 }
 
