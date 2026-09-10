@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Keyboard, Github, Star, User, ShieldCheck } from "lucide-react"
+import { Keyboard, Github, Star, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { APP_VERSION } from "@/lib/constants"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { AuthButton } from "@/components/auth-button"
 
 const GITHUB_REPO = "https://github.com/ausafulislam/Typing-Master"
 
@@ -37,7 +38,7 @@ export function Navbar() {
           {
             href: "/profile",
             label: "Profile",
-            icon: <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />,
+            icon: <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />,
             key: "profile",
           },
         ]
@@ -74,6 +75,7 @@ export function Navbar() {
             </Link>
           ))}
           <ThemeToggle />
+          <AuthButton />
           <a
             href={GITHUB_REPO}
             target="_blank"

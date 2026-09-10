@@ -5,6 +5,8 @@ import { Analytics } from "@vercel/analytics/next"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from "@/components/auth-provider"
+import { ScoreSyncer } from "@/components/score-syncer"
 import "./globals.css"
 
 // Runs before first paint so the correct theme class is present at hydration.
@@ -73,9 +75,12 @@ export default function RootLayout({
           Skip to content
         </a>
         <ThemeProvider>
-          <Navbar />
-          <div className="flex-1">{children}</div>
-          <Footer />
+          <AuthProvider>
+            <ScoreSyncer />
+            <Navbar />
+            <div className="flex-1">{children}</div>
+            <Footer />
+          </AuthProvider>
         </ThemeProvider>
         <Analytics />
       </body>

@@ -17,29 +17,31 @@ Status: complete, this is the existing live MVP.
 ## Phase 1 — Core Typing Engine Polish
 Goal: make the typing test itself excellent before adding accounts.
 
-- [ ] Multiple durations: 15s / 30s / 60s
-- [ ] Real-time WPM, accuracy, errors, progress display
-- [ ] Result screen: WPM, accuracy, errors, characters, duration
-- [ ] Guest mode fully local (no forced login)
-- [ ] Dark / light / system theme toggle
-- [ ] Mobile-responsive typing test
+- [x] Multiple durations: 15s / 30s / 60s
+- [x] Real-time WPM, accuracy, errors, progress display
+- [x] Result screen: WPM, accuracy, errors, characters, duration
+- [x] Guest mode fully local (no forced login)
+- [x] Dark / light / system theme toggle
+- [x] Mobile-responsive typing test
 
-Exit criteria: a guest can take a test in any of the 3 durations, see live stats, and get a clean result screen, on both desktop and mobile.
+Status: complete. Guest can take a test in any of the 3 durations, see live stats, and get a clean result screen, on both desktop and mobile. Real-device phone check still recommended.
 
 ---
 
 ## Phase 2 — Authentication (OAuth only)
 Goal: users can sign in only when they choose to save/compete.
 
-- [ ] Enable Google OAuth in Supabase
-- [ ] Enable GitHub OAuth in Supabase
-- [ ] Disable email/password provider
-- [ ] `/auth/callback` route handler
-- [ ] `profiles` table + auto-create on first login
-- [ ] Auth-gated "Save Result" button (guest → login prompt → auto-save after login)
-- [ ] Basic nav: show avatar/username when logged in, "Sign in" when not
+- [x] Enable Google OAuth in Supabase (code side done; enable provider + callback URL in Supabase dashboard)
+- [x] Enable GitHub OAuth in Supabase (code side done; enable provider + callback URL in Supabase dashboard)
+- [x] Disable email/password provider
+- [x] `/auth/callback` route handler
+- [x] `profiles` table + auto-create on first login
+- [x] Auth-gated "Save Result" button (guest → login prompt → auto-save after login)
+- [x] Basic nav: show avatar/username when logged in, "Sign in" when not
 
-Exit criteria: a guest can complete a test, click "Save Result," sign in with Google or GitHub, and land back with their result saved.
+Status: complete (v0.9.0). Guests never see a name dialog — Play goes straight to typing. Scores save locally (`tmx-unsynced-scores`) for guests and sync to the DB on their next login. Certificates are auth-gated with a blur overlay + sign-in box.
+
+Exit criteria: a guest can complete a test, click "Save Result," sign in with Google or GitHub, and land back with their result saved. ✅
 
 ---
 

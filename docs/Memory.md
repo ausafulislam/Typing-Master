@@ -19,13 +19,30 @@ After finishing a task or phase step:
 
 ## Current Status
 
-**Active phase:** Phase 1 — Core Typing Engine Polish (nearly complete)
-**Last updated:** 2026-09-04
-**Next task:** Phase 1 is functionally complete. Dark palette polished (v0.8.0). Next: real-device mobile check on a phone to confirm touch input feels right, then move to Phase 2 auth groundwork.
+**Active phase:** Phase 2 — Authentication (OAuth only) — implemented, committed at v0.9.0
+**Last updated:** 2026-09-10
+**Next task:** Enable Google + GitHub OAuth providers in the Supabase dashboard (set the `/auth/callback` redirect URL), then do the real-device mobile check and confirm the dark theme visually.
 
 ---
 
 ## Log
+
+### 2026-09-10 — Phase 2 authentication (v0.9.0)
+**Phase:** Phase 2
+**Done:**
+- Removed the name dialog entirely — clicking Play goes straight to typing. Designed a 3-step flow: (1) Play → type; (2) autosave; (3) if user is not signed in, score stores in `localStorage` (`tmx-unsynced-scores`); if signed in through Google/GitHub, it syncs to `typing_results` in Supabase and syncs to the database.
+- New account-based schema: `profiles` + `typing_results` tables with RLS; `handle_new_user()` trigger auto-creates a profile on first login.
+- New auth files: `lib/supabase/client.ts`, `middleware.ts` (session refresh). Auth UI: `components/auth-provider.tsx` (useAuth/AuthProvider), `auth-button.tsx` (Google + GitHub buttons, avatar + sign out), `components/score-syncer.tsx` (login → sync previous guest scores → clear key). `app/auth/callback/route.ts` + `app/auth/auth-code-error/page.tsx` handle the OAuth return trip; navbar now shows avatar/username or Sign in.
+- Homepage rewritten: no name dialog, "Start Typing Test" goes straight to `/game`, guest sees "Sign in" prompt, signed-in users see their stats. Game page rewritten: removes all name/nickname code, saves via `saveTypedResult` (signed in) or `localStorage` (guest), "Save Locally" unsaved scores button, sign-in link.
+- Profile page rewritten: guests blocked behind a blur overlay + "Sign In Required" prompt with sign-in buttons; all stats/ranks/history load from the DB.
+- `app/actions.ts` rewritten: removed obsolete legacy actions (`saveGameSession`, `checkNameExists`, `getPlayerStats`, `awardCertificates`, `getPlayerCertificates`, `getPlayerGameHistory`), added 8 new account actions.
+- `supabase/schema.sql` synced with new tables (guard rails: WPM/accuracy/other validation on new tables, RLS, trigger) and revokes on legacy RPCs
+- Hardening: revoked `EXECUTE` on `handle_new_user` (trigger-only) + on legacy `submit_game_session`/`award_certificate` RPCs (no longer called by app) to shrink attack surface (advisors WARN → resolved)
+
+**Deviations from plan:**
+- Phase 2 in Phases.md said "enable Google OAuth" and then list name-dialog-based flow; we implemented local-first store + auto-cleanup sync as the save path per user spec, plus Google *and* GitHub OAuth, and certificates are auth-gated with a blur box (instead of gating the whole flow). Verified inline.
+
+**Next (post-Phase-2 checklist):** vercel-env-based Supabase provider configuration (Google + GitHub redirect URLs pointing at `/auth/callback`), real-device mobile check, dark-theme visual confirmation.
 
 ### 2026-09-04 — Dark theme palette polish (v0.8.0)
 **Phase:** Phase 1 (polish)
@@ -67,8 +84,10 @@ After finishing a task or phase step:
 ## Known Issues / Tech Debt
 
 - Leaderboard uses legacy name-based schema (`game_sessions`), will be migrated to account-based in Phase 3.
-- Legacy certificate system (bronze/silver/gold/diamond + `/verify` + `/certificate/[id]`) predates the PRD; kept functional but not part of any active phase. Revisit in Phase 5/6.
+- Legacy certificate system (bronze/silver/gold/diamond + `/verify` + `/certificate/[id]`) predates the PRD; kept functional but not part of any active phase. Revisit in Phase 5/6. Phase 2 now auth-gates the certificate display on the profile (blur box) so they are no longer visible to guests.
 - `submit_game_session` trusts client-computed WPM/accuracy (range-validates only). Server-side recomputation from raw keystrokes lands in Phase 3.
+- `integer` `wpm` values still land in `typing_results` — decimals are dropped by the DB. Fine for now; Phase 3 recomputation may revisit.
+- OAuth provider config (Google + GitHub `redirectTo` URLs → `/auth/callback`) must be done manually in the Supabase dashboard; not scriptable from here.
 
 ---
 
@@ -78,3 +97,5 @@ After finishing a task or phase step:
 - Hand-rolled ThemeProvider instead of adding `next-themes`: keeps dependency count at zero new packages per Rules.md §2; theme key is `tmx-theme` in localStorage.
 - Touch devices were previously hard-blocked with a "Keyboard Required" gate; replaced with a hidden-input capture approach so mobile users can actually play (Phase 1 requirement).
 - Dark palette uses softened tones (foreground `#e8e8ec`, borders `#a1a1aa`, surfaces `#0a0a0a`/`#16161a`/`#232329`) to avoid the glare issues of pure-white borders/shadows on near-black backgrounds.
+- Phase 2 is local-first: guests never enter a name; scores persist in `localStorage` (`tmx-unsynced-scores`) and auto-sync to `typing_results` the moment the user signs in. This satisfies the user spec (Play → top → autosave → optional sign-in) rather than the original name-dialog flow.
+- No new dependencies for auth: `@supabase/supabase-js` + `@supabase/ssr` (already present) power session handling, middleware, and server actions.

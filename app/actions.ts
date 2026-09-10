@@ -1,114 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { CERTIFICATE_TIERS, LEADERBOARD_PAGE_SIZE, MAX_LEADERBOARD_ENTRIES, generateCertificateId } from "@/lib/constants"
-import { sanitizeName } from "@/lib/name-utils"
-
-const CERT_ID_RETRIES = 5
-
-export async function saveGameSession(data: {
-  name: string
-  duration: number
-  wpm: number
-  accuracy: number
-  errors: number
-  textMode?: string
-}) {
-  const name = sanitizeName(data.name)
-  if (!name) {
-    return { success: false, saved: false, error: "Name is required" }
-  }
-
-  const supabase = await createClient()
-
-  try {
-    // All validation + atomic best-score upsert happens in Postgres.
-    const { data: result, error } = await supabase.rpc("submit_game_session", {
-      p_name: name,
-      p_duration: data.duration,
-      p_wpm: data.wpm,
-      p_accuracy: data.accuracy,
-      p_errors: data.errors,
-      p_text_mode: data.textMode || "normal",
-    })
-
-    if (error) throw error
-
-    return { success: true, saved: Boolean((result as { saved?: boolean } | null)?.saved) }
-  } catch (error: unknown) {
-    console.error("Failed to save game session:", error)
-    const message =
-      error instanceof Error && /Name is required|Invalid score data/.test(error.message)
-        ? error.message
-        : "Failed to save game session"
-    return { success: false, saved: false, error: message }
-  }
-}
-
-export async function checkNameExists(name: string): Promise<boolean> {
-  const safeName = sanitizeName(name)
-  if (!safeName) return false
-
-  const supabase = await createClient()
-
-  try {
-    // head:true returns count without rows — data will be null, so use count.
-    const { count, error } = await supabase
-      .from("game_sessions")
-      .select("id", { count: "exact", head: true })
-      .eq("name", safeName)
-      .limit(1)
-
-    if (error) throw error
-
-    return (count ?? 0) > 0
-  } catch (error: unknown) {
-    console.error("Failed to check name:", error)
-    return false
-  }
-}
-
-export async function getPlayerStats(name: string) {
-  const safeName = sanitizeName(name)
-  if (!safeName) return null
-
-  const supabase = await createClient()
-
-  try {
-    const { data: best, error: bestError } = await supabase
-      .from("game_sessions")
-      .select("wpm, accuracy, errors")
-      .eq("name", safeName)
-      .order("wpm", { ascending: false })
-      .order("accuracy", { ascending: false })
-      .order("errors", { ascending: true })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (bestError) throw bestError
-    if (!best) return null
-
-    // Count everyone strictly ahead of this player's best score.
-    const { count: ahead, error: aheadError } = await supabase
-      .from("game_sessions")
-      .select("id", { count: "exact", head: true })
-      .or(
-        `wpm.gt.${best.wpm},and(wpm.eq.${best.wpm},accuracy.gt.${best.accuracy}),and(wpm.eq.${best.wpm},accuracy.eq.${best.accuracy},errors.lt.${best.errors})`,
-      )
-
-    if (aheadError) throw aheadError
-
-    return {
-      wpm: best.wpm,
-      accuracy: best.accuracy,
-      rank: (ahead ?? 0) + 1,
-    }
-  } catch (error: unknown) {
-    console.error("Failed to fetch player stats:", error)
-    return null
-  }
-}
+import { LEADERBOARD_PAGE_SIZE, MAX_LEADERBOARD_ENTRIES } from "@/lib/constants"
 
 export async function getLeaderboard(page = 1) {
   const supabase = await createClient()
@@ -141,57 +34,6 @@ export async function getLeaderboard(page = 1) {
   } catch (error: unknown) {
     console.error("Failed to fetch leaderboard:", error)
     return { entries: [], page: safePage, hasMore: false, error: "Failed to load leaderboard" }
-  }
-}
-
-export async function awardCertificates(name: string, wpm: number, accuracy: number) {
-  const supabase = await createClient()
-  const safeName = sanitizeName(name)
-  if (!safeName) return []
-
-  const newCerts: { tier: string; id: string }[] = []
-
-  try {
-    const { data: existing, error: existingError } = await supabase
-      .from("certificates")
-      .select("tier")
-      .eq("name", safeName)
-
-    if (existingError) throw existingError
-
-    const earnedTiers = new Set((existing ?? []).map((r) => r.tier))
-
-    for (const tier of CERTIFICATE_TIERS) {
-      if (earnedTiers.has(tier.name)) continue
-      // Client-side pre-check; the RPC re-validates thresholds server-side.
-      if (wpm >= tier.minWpm && accuracy >= tier.minAccuracy) {
-        let inserted = false
-        // Retry with fresh IDs on the rare chance of an ID collision
-        for (let attempt = 0; attempt < CERT_ID_RETRIES && !inserted; attempt++) {
-          const certId = generateCertificateId(tier)
-          const { data: wasInserted, error } = await supabase.rpc("award_certificate", {
-            p_id: certId,
-            p_name: safeName,
-            p_tier: tier.name,
-            p_wpm: wpm,
-            p_accuracy: accuracy,
-          })
-          if (error) {
-            console.error(`Failed to award ${tier.name} certificate:`, error)
-            break
-          }
-          if (wasInserted) {
-            newCerts.push({ tier: tier.name, id: certId })
-            inserted = true
-          }
-        }
-      }
-    }
-
-    return newCerts
-  } catch (error: unknown) {
-    console.error("Failed to award certificates:", error)
-    return []
   }
 }
 
@@ -240,45 +82,250 @@ export async function verifyCertificate(id: string): Promise<CertificateRecord |
   }
 }
 
-export async function getPlayerCertificates(name: string) {
-  const safeName = sanitizeName(name)
-  if (!safeName) return []
+// ============================================================
+// Phase 2: Account-based actions
+// ============================================================
 
+interface LocalScore {
+  wpm: number
+  accuracy: number
+  errors: number
+  duration: number
+  textMode: string
+  createdAt: string
+}
+
+export async function saveTypedResult(data: {
+  wpm: number
+  accuracy: number
+  errors: number
+  duration: number
+  textMode?: string
+}) {
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  // Validate ranges server-side
+  if (data.wpm < 0 || data.wpm > 400 || data.accuracy < 0 || data.accuracy > 100 || data.errors < 0 || data.duration <= 0 || data.duration > 300) {
+    return { success: false, error: "Invalid score data" }
+  }
+
+  const textMode = data.textMode || "normal"
+  const validModes = ["normal", "numbers", "punctuation", "quotes"]
+  const mode = validModes.includes(textMode) ? textMode : "normal"
+
   try {
-    const { data, error } = await supabase
-      .from("certificates")
-      .select("id, tier, wpm, accuracy, created_at")
-      .eq("name", safeName)
-      .order("created_at", { ascending: false })
+    const { error } = await supabase.from("typing_results").insert({
+      user_id: user.id,
+      wpm: data.wpm,
+      accuracy: data.accuracy,
+      errors: data.errors,
+      duration: data.duration,
+      text_mode: mode,
+    })
 
     if (error) throw error
-    return data ?? []
+
+    return { success: true }
   } catch (error: unknown) {
-    console.error("Failed to fetch certificates:", error)
-    return []
+    console.error("Failed to save typed result:", error)
+    return { success: false, error: "Failed to save result" }
   }
 }
 
-export async function getPlayerGameHistory(name: string) {
-  const safeName = sanitizeName(name)
-  if (!safeName) return []
-
+export async function syncLocalScores(scores: LocalScore[]) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { success: false, synced: 0, error: "Not authenticated" }
+  }
+
+  if (!Array.isArray(scores) || scores.length === 0) {
+    return { success: true, synced: 0 }
+  }
+
+  // Limit to 50 scores per sync to prevent abuse
+  const toSync = scores.slice(0, 50)
+
+  const validModes = ["normal", "numbers", "punctuation", "quotes"]
+
+  const rows = toSync.map((s) => ({
+    user_id: user.id,
+    wpm: Math.max(0, Math.min(400, Math.round(s.wpm))),
+    accuracy: Math.max(0, Math.min(100, s.accuracy)),
+    errors: Math.max(0, Math.round(s.errors)),
+    duration: Math.max(1, Math.min(300, Math.round(s.duration))),
+    text_mode: validModes.includes(s.textMode) ? s.textMode : "normal",
+    created_at: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString(),
+  }))
+
+  try {
+    const { error, data } = await supabase.from("typing_results").insert(rows).select("id")
+
+    if (error) throw error
+
+    return { success: true, synced: data?.length ?? 0 }
+  } catch (error: unknown) {
+    console.error("Failed to sync local scores:", error)
+    return { success: false, synced: 0, error: "Failed to sync scores" }
+  }
+}
+
+export async function getUserProfile() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
 
   try {
     const { data, error } = await supabase
-      .from("game_history")
-      .select("id, text_mode, duration, wpm, accuracy, errors, created_at")
-      .eq("name", safeName)
+      .from("profiles")
+      .select("id, display_name, avatar_url, created_at")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (error) throw error
+    return data
+  } catch (error: unknown) {
+    console.error("Failed to fetch user profile:", error)
+    return null
+  }
+}
+
+export async function getUserBestResult() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  try {
+    const { data, error } = await supabase
+      .from("typing_results")
+      .select("wpm, accuracy, errors")
+      .eq("user_id", user.id)
+      .order("wpm", { ascending: false })
+      .order("accuracy", { ascending: false })
+      .order("errors", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+    return data
+  } catch (error: unknown) {
+    console.error("Failed to fetch user best result:", error)
+    return null
+  }
+}
+
+export async function getUserResultHistory() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  try {
+    const { data, error } = await supabase
+      .from("typing_results")
+      .select("id, wpm, accuracy, errors, duration, text_mode, created_at")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(100)
 
     if (error) throw error
     return data ?? []
   } catch (error: unknown) {
-    console.error("Failed to fetch game history:", error)
+    console.error("Failed to fetch user result history:", error)
+    return []
+  }
+}
+
+export async function getUserResults() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { best: null, history: [] as Awaited<ReturnType<typeof getUserResultHistory>> }
+
+  const [best, history] = await Promise.all([
+    getUserBestResult(),
+    getUserResultHistory(),
+  ])
+
+  return { best, history }
+}
+
+export async function getUserRank() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  try {
+    // Get user's best score
+    const { data: best, error: bestError } = await supabase
+      .from("typing_results")
+      .select("wpm, accuracy, errors")
+      .eq("user_id", user.id)
+      .order("wpm", { ascending: false })
+      .order("accuracy", { ascending: false })
+      .order("errors", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (bestError) throw bestError
+    if (!best) return null
+
+    // Count everyone strictly ahead
+    const { count: ahead, error: aheadError } = await supabase
+      .from("typing_results")
+      .select("id", { count: "exact", head: true })
+      .or(
+        `wpm.gt.${best.wpm},and(wpm.eq.${best.wpm},accuracy.gt.${best.accuracy}),and(wpm.eq.${best.wpm},accuracy.eq.${best.accuracy},errors.lt.${best.errors})`,
+      )
+
+    if (aheadError) throw aheadError
+
+    return {
+      wpm: best.wpm,
+      accuracy: best.accuracy,
+      rank: (ahead ?? 0) + 1,
+    }
+  } catch (error: unknown) {
+    console.error("Failed to fetch user rank:", error)
+    return null
+  }
+}
+
+export async function getUserCertificates() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  try {
+    // Get user's display_name from profile for cert lookup
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (!profile?.display_name) return []
+
+    const { data, error } = await supabase
+      .from("certificates")
+      .select("id, tier, wpm, accuracy, created_at")
+      .eq("name", profile.display_name)
+      .order("created_at", { ascending: false })
+
+    if (error) throw error
+    return data ?? []
+  } catch (error: unknown) {
+    console.error("Failed to fetch user certificates:", error)
     return []
   }
 }

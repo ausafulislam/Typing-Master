@@ -2,18 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, BarChart3, Loader2, Check, Pencil, Volume2, VolumeX, Trophy } from "lucide-react"
+import { RotateCcw, BarChart3, Loader2, Check, Volume2, VolumeX, Trophy } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import Link from "next/link"
-import { saveGameSession, checkNameExists, awardCertificates } from "../actions"
+import { useAuth } from "@/components/auth-provider"
+import { createClient } from "@/lib/supabase/client"
+import { saveTypedResult } from "../actions"
 import { playKeySound } from "@/lib/key-sound"
-import { generateSuggestions, sanitizeName } from "@/lib/name-utils"
 import { calculateAccuracy, calculateProgress, calculateWpm } from "@/lib/wpm"
 import { useLocalStorageState } from "@/hooks/use-local-storage-state"
 
-const NAME_KEY = "typing-game-nickname"
 const SOUND_KEY = "typing-game-sound"
+const LOCAL_SCORES_KEY = "tmx-unsynced-scores"
 const WPM_STABILITY_THRESHOLD = 5
 
 const SAMPLE_TEXTS = {
@@ -49,8 +49,15 @@ const SAMPLE_TEXTS = {
 
 type TextMode = keyof typeof SAMPLE_TEXTS
 
-// Deterministic first render (server + client match, no hydration swap);
-// every restart/mode change afterwards randomizes via resetGame().
+interface LocalScore {
+  wpm: number
+  accuracy: number
+  errors: number
+  duration: number
+  textMode: string
+  createdAt: string
+}
+
 const INITIAL_TEXT = SAMPLE_TEXTS.normal[0]
 
 const KEYBOARD_LAYOUT = [
@@ -68,6 +75,8 @@ const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
 ]
 
 export default function TypingGame() {
+  const { user } = useAuth()
+
   const [sampleText, setSampleText] = useState<string>(INITIAL_TEXT)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [timeLimit, setTimeLimit] = useState(30)
@@ -79,25 +88,16 @@ export default function TypingGame() {
   const [pressedKey, setPressedKey] = useState<string | null>(null)
   const [errorFlash, setErrorFlash] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [storedName, setStoredName] = useLocalStorageState(NAME_KEY, "")
-  // Draft for the rename input — null means "not editing", show stored name.
-  const [nicknameDraft, setNicknameDraft] = useState<string | null>(null)
-  const nickname = nicknameDraft ?? storedName
-  const [isSaving, setIsSaving] = useState(false)
-  const [hasSaved, setHasSaved] = useState(false)
-  const [editingName, setEditingName] = useState(false)
   const [soundPref, setSoundPref] = useLocalStorageState(SOUND_KEY, "on")
   const soundOn = soundPref !== "off"
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [textMode, setTextMode] = useState<TextMode>("normal")
-  const [nameError, setNameError] = useState(false)
-  const [nameSuggestions, setNameSuggestions] = useState<string[]>([])
-  const [newCertificates, setNewCertificates] = useState<{ tier: string; id: string }[]>([])
+  const [isSaving, setIsSaving] = useState(false)
+  const [hasSaved, setHasSaved] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [scrollY, setScrollY] = useState(0)
   const [liveWpm, setLiveWpm] = useState(0)
   const [finalWpm, setFinalWpm] = useState<number | null>(null)
   const [finalElapsed, setFinalElapsed] = useState(0)
-  const nameDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isFinishedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -176,7 +176,6 @@ export default function TypingGame() {
     [timeLimit, textMode, clearTimeouts],
   )
 
-  // Timer effect — wall-clock based so interval throttling/drift cannot extend the game.
   useEffect(() => {
     if (!isActive) return
 
@@ -189,7 +188,6 @@ export default function TypingGame() {
         finishGame()
       } else {
         setTimeLeft(Math.ceil(remaining))
-        // Suppress unstable readings during the first seconds of a run
         setLiveWpm(
           elapsed < WPM_STABILITY_THRESHOLD ? 0 : calculateWpm(currentIndexRef.current, elapsed),
         )
@@ -207,7 +205,6 @@ export default function TypingGame() {
     }
   }, [isActive, finishGame])
 
-  // Keep the caret line in view by measuring its real rendered position.
   useEffect(() => {
     const el = caretElRef.current
     const wrapper = textWrapperRef.current
@@ -221,8 +218,6 @@ export default function TypingGame() {
     setScrollY(Math.max(0, el.offsetTop - lineHeight))
   }, [currentIndex, sampleText])
 
-  // Core per-character engine step — shared by physical keyboard, hidden input
-  // keydown, and mobile virtual-keyboard input fallback.
   const processChar = useCallback(
     (key: string) => {
       if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
@@ -261,16 +256,13 @@ export default function TypingGame() {
     [finishGame, soundOn],
   )
 
-  // Handle key press — uses refs for values that change between renders
   const handleKeyPress = useCallback(
     (e: KeyboardEvent) => {
       if (isFinishedRef.current || currentIndexRef.current >= sampleTextRef.current.length) return
 
-      // Don't hijack typing when focus is in a form field (incl. the hidden input)
       const target = e.target as HTMLElement | null
       if (target && target.closest("input, textarea, select, [contenteditable=true]")) return
 
-      // Ignore modified keys (shortcuts like Ctrl+C / Cmd+V / Alt+Tab) and key auto-repeat
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
 
       const key = e.key
@@ -284,9 +276,6 @@ export default function TypingGame() {
     [processChar],
   )
 
-  // Keydown on the hidden capture input (focused after tap/click). preventDefault
-  // stops the character from being inserted so the input-event fallback below
-  // cannot double-process it.
   const handleTypingKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
@@ -298,8 +287,6 @@ export default function TypingGame() {
     [processChar],
   )
 
-  // Fallback for virtual keyboards that don't emit usable keydown events:
-  // read inserted characters straight from the input, then clear it.
   const handleTypingInput = useCallback(
     (e: React.FormEvent<HTMLInputElement>) => {
       const el = e.currentTarget
@@ -326,7 +313,6 @@ export default function TypingGame() {
     }
   }, [handleKeyPress, clearTimeouts])
 
-  // Live WPM is updated by the timer tick (state-driven, no render-time ref reads).
   const displayWpm = isFinished ? finalWpm ?? 0 : liveWpm
   const accuracy = calculateAccuracy(totalTyped, errors)
   const progress = calculateProgress(currentIndex, sampleText.length)
@@ -343,77 +329,53 @@ export default function TypingGame() {
     resetGame({ textMode: newMode })
   }
 
+  const handleSignIn = async () => {
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+  }
+
   const toggleSound = () => {
     const next = !soundOn
     setSoundPref(next ? "on" : "off")
     if (next) playKeySound("key")
   }
 
-  const handleNameChange = (value: string) => {
-    setNicknameDraft(value)
-    setHasSaved(false)
-    setSaveFeedback(null)
-    setNameError(false)
-    setNameSuggestions([])
-    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
-    const trimmed = value.trim()
-    if (!trimmed || trimmed.length < 2) {
-      return
-    }
-    nameDebounceTimer.current = setTimeout(() => {
-      checkNameExists(trimmed).then((exists) => {
-        setNameError(exists)
-        setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
-      })
-    }, 400)
-  }
-
-  const checkCurrentName = useCallback(() => {
-    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
-    const trimmed = nickname.trim()
-    if (!trimmed || trimmed.length < 2) {
-      setNameError(false)
-      setNameSuggestions([])
-      return
-    }
-    checkNameExists(trimmed).then((exists) => {
-      setNameError(exists)
-      setNameSuggestions(exists ? generateSuggestions(trimmed) : [])
-    })
-  }, [nickname])
-
-  const persistName = () => {
-    const sanitized = sanitizeName(nickname)
-    if (sanitized) {
-      setStoredName(sanitized)
-      setNicknameDraft(null)
-    }
-  }
-
   const handleSaveSession = async () => {
-    const sanitized = sanitizeName(nickname)
-    if (!sanitized) return
     setIsSaving(true)
     setSaveFeedback(null)
-    setNewCertificates([])
     try {
       const wpmToSave = finalWpm ?? displayWpm
-      const result = await saveGameSession({ name: sanitized, duration: timeLimit, wpm: wpmToSave, accuracy, errors, textMode })
-      if (result.success) {
-        if (result.saved) {
+      if (user) {
+        const result = await saveTypedResult({
+          wpm: wpmToSave,
+          accuracy,
+          errors,
+          duration: timeLimit,
+          textMode,
+        })
+        if (result.success) {
           setHasSaved(true)
-          setStoredName(sanitized)
-          setNicknameDraft(null)
-          const certs = await awardCertificates(sanitized, wpmToSave, accuracy)
-          if (certs.length > 0) {
-            setNewCertificates(certs)
-          }
+          setSaveFeedback("Saved to your account")
         } else {
-          setHasSaved(true)
-          setSaveFeedback("Your best score is higher — this run wasn't saved.")
+          setSaveFeedback(result.error ?? "Failed to save score. Please try again.")
         }
       } else {
-        setSaveFeedback(result.error || "Failed to save score. Please try again.")
+        const existing = localStorage.getItem(LOCAL_SCORES_KEY)
+        const scores: LocalScore[] = existing ? JSON.parse(existing) : []
+        scores.push({
+          wpm: wpmToSave,
+          accuracy,
+          errors,
+          duration: timeLimit,
+          textMode,
+          createdAt: new Date().toISOString(),
+        })
+        localStorage.setItem(LOCAL_SCORES_KEY, JSON.stringify(scores))
+        setHasSaved(true)
+        setSaveFeedback("Saved locally")
       }
     } catch (error) {
       console.error("Failed to save:", error)
@@ -422,6 +384,8 @@ export default function TypingGame() {
       setIsSaving(false)
     }
   }
+
+  const displayName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "Guest"
 
   const liveStats = [
     { label: "WPM", value: displayWpm },
@@ -441,7 +405,7 @@ export default function TypingGame() {
                 Player
               </span>
               <p className="text-sm sm:text-base font-black uppercase tracking-tight text-foreground truncate">
-                {sanitizeName(nickname) || "Guest"}
+                {displayName}
               </p>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -557,8 +521,6 @@ export default function TypingGame() {
                 </span>
               </div>
             )}
-            {/* Hidden capture input — summons the mobile keyboard; desktop typing
-                still flows through the window keydown listener */}
             <input
               ref={hiddenInputRef}
               type="text"
@@ -694,108 +656,42 @@ export default function TypingGame() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 border-2 border-foreground bg-card px-4 py-3 shadow-brutal">
-                {editingName ? (
-                  <Input
-                    autoFocus
-                    value={nickname}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    onBlur={() => { setEditingName(false); persistName(); checkCurrentName() }}
-                    placeholder="Your name"
-                    aria-label="Your name"
-                    autoComplete="off"
-                    spellCheck={false}
-                    maxLength={20}
-                    className={`h-8 border-0 p-0 text-lg font-black ${
-                      nameError ? "text-destructive" : ""
-                    }`}
-                  />
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground leading-none">
-                      Saving as
-                    </p>
-                    <p className="text-lg font-black text-foreground leading-none">{nickname || "Anonymous"}</p>
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    setEditingName((v) => !v)
-                    if (!editingName) checkCurrentName()
-                  }}
-                  className="border-2 border-foreground bg-secondary p-1.5 hover:bg-primary hover:text-primary-foreground transition-colors"
-                  aria-label="Edit name"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              </div>
-              {nameError && (
-                <div className="flex flex-col gap-2 px-1">
-                  <p className="text-xs font-bold text-primary">
-                    This name has existing scores. Your best score will be updated.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground self-center">
-                      Or try:
-                    </span>
-                    {nameSuggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => handleNameChange(suggestion)}
-                        className="border-2 border-foreground bg-secondary px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <Button
+              onClick={handleSaveSession}
+              disabled={isSaving || hasSaved}
+              className="w-full h-11 border-2 border-foreground bg-foreground text-background font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-60"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving
+                </>
+              ) : hasSaved ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Saved
+                </>
+              ) : (
+                user ? "Save Score" : "Save Locally"
               )}
-            </div>
+            </Button>
+
+            {!user && !hasSaved && (
+              <button
+                onClick={handleSignIn}
+                className="text-center text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground hover:text-primary transition-colors cursor-pointer underline underline-offset-4"
+              >
+                Sign in to save permanently
+              </button>
+            )}
 
             {saveFeedback && (
-              <p role="status" aria-live="polite" className="text-center text-xs font-bold uppercase tracking-widest text-destructive">
+              <p role="status" aria-live="polite" className={`text-center text-xs font-bold uppercase tracking-widest ${hasSaved ? "text-primary" : "text-destructive"}`}>
                 {saveFeedback}
               </p>
             )}
 
-            {newCertificates.length > 0 && (
-              <div className="flex flex-col gap-2 border-2 border-foreground bg-secondary p-4 shadow-brutal">
-                <p className="text-xs font-bold uppercase tracking-widest text-center text-primary">
-                  New Certificate{newCertificates.length > 1 ? "s" : ""} Earned!
-                </p>
-                {newCertificates.map((cert) => (
-                  <div key={cert.id} className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground">
-                      {cert.tier}
-                    </span>
-                    <code className="text-xs font-mono font-bold text-primary">{cert.id}</code>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="flex gap-3">
-              <Button
-                onClick={handleSaveSession}
-                disabled={isSaving || hasSaved || !nickname.trim()}
-                className="flex-1 h-11 border-2 border-foreground bg-foreground text-background font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-60"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving
-                  </>
-                ) : hasSaved ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Saved
-                  </>
-                ) : (
-                  "Save Score"
-                )}
-              </Button>
               <Button
                 onClick={() => resetGame()}
                 className="flex-1 h-11 border-2 border-foreground bg-primary text-primary-foreground font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
