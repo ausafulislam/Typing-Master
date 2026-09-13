@@ -1,5 +1,14 @@
 import Link from "next/link"
-import { Keyboard } from "lucide-react"
+import { Keyboard, Home, Gamepad2, ShieldCheck } from "lucide-react"
+
+const linkClasses =
+  "inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+
+const footerLinks = [
+  { href: "/", label: "Home", icon: <Home className="w-3.5 h-3.5" /> },
+  { href: "/game", label: "Play", icon: <Gamepad2 className="w-3.5 h-3.5" /> },
+  { href: "/verify", label: "Verify", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+]
 
 export function Footer() {
   return (
@@ -11,17 +20,17 @@ export function Footer() {
           </div>
           <span className="text-xs sm:text-sm font-black uppercase tracking-tight">TypeMaster</span>
         </div>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/verify"
-            className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Verify Certificate
-          </Link>
-          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            &copy; 2026 Ausaf Ul Islam
-          </p>
-        </div>
+        <nav aria-label="Footer navigation" className="flex items-center gap-3 sm:gap-5">
+          {footerLinks.map((link) => (
+            <Link key={link.href} href={link.href} className={linkClasses}>
+              {link.icon}
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          &copy; 2026 Ausaf Ul Islam
+        </p>
       </div>
     </footer>
   )

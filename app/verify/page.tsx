@@ -3,16 +3,15 @@
 import { useState } from "react"
 import { ShieldCheck, ShieldX, Loader2 } from "lucide-react"
 import { verifyCertificate, type CertificateRecord } from "../actions"
-import { CERTIFICATE_TIERS } from "@/lib/constants"
+import { getTierConfig } from "@/lib/constants"
 
 function getTierColor(tier: string): string {
-  const t = CERTIFICATE_TIERS.find((ct) => ct.name === tier)
-  return t?.color ?? "#888"
+  return getTierConfig(tier).color
 }
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
 }
 
 export default function VerifyPage() {
@@ -77,7 +76,7 @@ export default function VerifyPage() {
                 <ShieldCheck className="w-10 h-10" />
               </div>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-foreground">
+            <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-foreground text-balance">
               Certificate Verification
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -89,15 +88,17 @@ export default function VerifyPage() {
           <div className="flex flex-col gap-3">
             <div className="flex gap-2">
               <input
-                autoFocus
                 value={input}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
                 placeholder="TYM.X.XXX.XXX"
                 aria-label="Certificate ID"
+                name="certificateId"
+                inputMode="text"
+                enterKeyHint="go"
                 autoComplete="off"
                 spellCheck={false}
-                className="flex-1 h-12 border-2 border-foreground bg-card px-4 text-center text-lg font-mono font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary uppercase"
+                className="flex-1 h-12 min-w-0 border-2 border-foreground bg-card px-4 text-center text-lg font-mono font-bold shadow-brutal focus-visible:ring-0 focus-visible:border-primary uppercase"
               />
               <button
                 onClick={handleVerify}
@@ -111,7 +112,7 @@ export default function VerifyPage() {
 
           {/* Result */}
           {result && (
-            <div className="border-2 border-foreground bg-card p-6 shadow-brutal flex flex-col gap-4">
+            <div role="status" aria-live="polite" className="border-2 border-foreground bg-card p-6 shadow-brutal flex flex-col gap-4">
               <div className="flex items-center gap-3">
                 <ShieldCheck className="w-6 h-6 text-green-600" />
                 <span className="text-sm font-black uppercase tracking-widest text-green-600">Valid Certificate</span>
@@ -149,7 +150,7 @@ export default function VerifyPage() {
           )}
 
           {notFound && hasChecked && !checking && (
-            <div className="border-2 border-foreground bg-card p-6 shadow-brutal flex flex-col gap-3">
+            <div role="status" aria-live="polite" className="border-2 border-foreground bg-card p-6 shadow-brutal flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <ShieldX className="w-6 h-6 text-destructive" />
                 <span className="text-sm font-black uppercase tracking-widest text-destructive">Invalid Certificate</span>

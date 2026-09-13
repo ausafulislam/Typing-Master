@@ -75,7 +75,7 @@ const TEXT_MODE_OPTIONS: { value: TextMode; label: string }[] = [
 ]
 
 export default function TypingGame() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
 
   const [sampleText, setSampleText] = useState<string>(INITIAL_TEXT)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -269,6 +269,9 @@ export default function TypingGame() {
       if (key.length > 1 && key !== " ") return
 
       const isInteractiveTarget = Boolean(target?.closest('button, a[href], [role="button"]'))
+      // Space/Enter on a focused button must only activate the button — never
+      // also type into the test.
+      if (isInteractiveTarget && (key === " " || key === "Enter")) return
       if (key === " " && !isInteractiveTarget) e.preventDefault()
 
       processChar(key)
@@ -329,11 +332,15 @@ export default function TypingGame() {
     resetGame({ textMode: newMode })
   }
 
-  const handleSignIn = async () => {
+  const handleSignIn = async (provider: "google" | "github") => {
     const supabase = createClient()
     await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      provider,
+      options: {
+        // Return to the game page after the OAuth round trip so the player
+        // lands back where they were.
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/game")}`,
+      },
     })
   }
 
@@ -364,7 +371,16 @@ export default function TypingGame() {
         }
       } else {
         const existing = localStorage.getItem(LOCAL_SCORES_KEY)
-        const scores: LocalScore[] = existing ? JSON.parse(existing) : []
+        let scores: LocalScore[] = []
+        if (existing) {
+          try {
+            const parsed: unknown = JSON.parse(existing)
+            if (Array.isArray(parsed)) scores = parsed as LocalScore[]
+          } catch {
+            // Corrupt data — start fresh rather than losing this save.
+            scores = []
+          }
+        }
         scores.push({
           wpm: wpmToSave,
           accuracy,
@@ -373,6 +389,8 @@ export default function TypingGame() {
           textMode,
           createdAt: new Date().toISOString(),
         })
+        // Keep only the most recent 50 — matches the server sync limit.
+        if (scores.length > 50) scores = scores.slice(-50)
         localStorage.setItem(LOCAL_SCORES_KEY, JSON.stringify(scores))
         setHasSaved(true)
         setSaveFeedback("Saved locally")
@@ -421,7 +439,11 @@ export default function TypingGame() {
               </button>
               <div className="border-2 border-foreground bg-foreground text-background px-4 py-2 text-center shadow-brutal">
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 leading-none mb-1">Timer</p>
-                <p className="text-3xl font-black font-mono leading-none tabular-nums">
+                <p
+                  className="text-3xl font-black font-mono leading-none tabular-nums"
+                  role="timer"
+                  aria-label={`${timeLeft} seconds remaining`}
+                >
                   {String(timeLeft).padStart(2, "0")}
                 </p>
               </div>
@@ -536,9 +558,16 @@ export default function TypingGame() {
             />
           </div>
 
-          {/* Progress Bar */}
+          {/* Progress Bar — screenreader value comes from the percentage text */}
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 bg-secondary overflow-hidden">
+            <div
+              className="flex-1 h-2 bg-secondary overflow-hidden"
+              role="progressbar"
+              aria-label="Test progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            >
               <div
                 className="h-full bg-primary transition-all duration-200 ease-out"
                 style={{ width: `${progress}%` }}
@@ -569,8 +598,8 @@ export default function TypingGame() {
             )}
           </div>
 
-          {/* Visual Keyboard */}
-          <div className="bg-foreground border-2 border-foreground p-4 sm:p-6">
+          {/* Visual Keyboard — decorative feedback for the current keystroke */}
+          <div className="bg-foreground border-2 border-foreground p-4 sm:p-6" aria-hidden="true">
             <div className="flex flex-col gap-2 sm:gap-2.5">
               {KEYBOARD_LAYOUT.map((row, rowIdx) => (
                 <div key={rowIdx} className="flex justify-center gap-1.5 sm:gap-2.5">
@@ -658,7 +687,7 @@ export default function TypingGame() {
           <div className="flex flex-col gap-4">
             <Button
               onClick={handleSaveSession}
-              disabled={isSaving || hasSaved}
+              disabled={isSaving || hasSaved || authLoading}
               className="w-full h-11 border-2 border-foreground bg-foreground text-background font-black uppercase shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-60"
             >
               {isSaving ? (
@@ -676,13 +705,24 @@ export default function TypingGame() {
               )}
             </Button>
 
-            {!user && !hasSaved && (
-              <button
-                onClick={handleSignIn}
-                className="text-center text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground hover:text-primary transition-colors cursor-pointer underline underline-offset-4"
-              >
-                Sign in to save permanently
-              </button>
+            {!user && !authLoading && !hasSaved && (
+              <div className="flex items-center justify-center gap-4">
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                  Or
+                </span>
+                <button
+                  onClick={() => handleSignIn("google")}
+                  className="text-center text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground hover:text-primary transition-colors cursor-pointer underline underline-offset-4"
+                >
+                  Sign in with Google
+                </button>
+                <button
+                  onClick={() => handleSignIn("github")}
+                  className="text-center text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground hover:text-primary transition-colors cursor-pointer underline underline-offset-4"
+                >
+                  Sign in with GitHub
+                </button>
+              </div>
             )}
 
             {saveFeedback && (

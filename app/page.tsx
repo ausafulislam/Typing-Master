@@ -1,17 +1,55 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, LogIn } from "lucide-react"
+import { ArrowRight, LogIn, Gamepad2, Target, Trophy, Medal, Keyboard } from "lucide-react"
 import { Leaderboard } from "@/components/leaderboard"
 import { APP_VERSION } from "@/lib/constants"
 import { useAuth } from "@/components/auth-provider"
 import { createClient } from "@/lib/supabase/client"
+import { getUserResults, getUserRank } from "./actions"
+
+interface HeroStats {
+  tests: number
+  bestWpm: number | null
+  avgAccuracy: number | null
+  rank: number | null
+}
+
+const statTile =
+  "border-2 border-foreground bg-card p-4 shadow-brutal flex flex-col gap-1.5"
 
 export default function LandingPage() {
   const router = useRouter()
   const { user } = useAuth()
+  const [stats, setStats] = useState<HeroStats | null>(null)
   const supabase = createClient()
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    Promise.all([getUserResults(), getUserRank()])
+      .then(([results, rank]) => {
+        if (cancelled) return
+        const history = results.history
+        const tests = history.length
+        const avgAccuracy =
+          tests > 0 ? Math.round((history.reduce((sum, g) => sum + g.accuracy, 0) / tests) * 10) / 10 : null
+        setStats({
+          tests,
+          bestWpm: results.best?.wpm ?? null,
+          avgAccuracy,
+          rank: rank?.rank ?? null,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setStats(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   const startGame = () => {
     router.push("/game")
@@ -34,7 +72,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto w-full">
           {/* Hero */}
           <section className="border-b-2 border-foreground">
-            <div className="px-4 sm:px-6 lg:px-16 py-10 sm:py-16 lg:py-24 flex flex-col gap-8 sm:gap-10">
+            <div className="px-4 sm:px-6 lg:px-16 py-10 sm:py-16 lg:py-20 flex flex-col gap-8 sm:gap-10">
               {/* Title */}
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -45,32 +83,59 @@ export default function LandingPage() {
                     No sign-in required
                   </span>
                 </div>
-                <h2 className="text-4xl sm:text-5xl lg:text-7xl font-black uppercase tracking-tighter text-foreground leading-[1.05] sm:leading-[1.05] lg:leading-[1] break-words">
+                <h2 className="text-4xl sm:text-5xl lg:text-7xl font-black uppercase tracking-tighter text-foreground leading-[1.3] sm:leading-[1.35] lg:leading-[1.25] break-words text-balance">
                   Master Your{" "}
                   <span className="bg-primary text-primary-foreground px-2 sm:px-3 box-decoration-clone">
                     Typing
                   </span>{" "}
                   Speed
                 </h2>
-                <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+                <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed text-pretty">
                   Push your typing speed to the limit. Track every keystroke, crush your accuracy, and climb the global leaderboard.
                 </p>
               </div>
 
-              {/* Sign-in prompt (guests) or Stats (authenticated) */}
+              {/* Stats (authenticated) or Sign-in prompt (guests) */}
               <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  {user ? "Your Stats" : "Get Started"}
-                </span>
                 {user ? (
-                  <div className="border-2 border-foreground bg-card p-4 sm:p-6 shadow-brutal">
-                    <p className="text-sm font-bold text-muted-foreground">
-                      Signed in as <span className="text-foreground">{user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Your scores are saved automatically to your account.
-                    </p>
-                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className={statTile}>
+                        <Gamepad2 className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-2xl font-black font-mono leading-none text-primary tabular-nums">
+                          {stats?.tests ?? "-"}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          Tests
+                        </span>
+                      </div>
+                      <div className={statTile}>
+                        <Trophy className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-2xl font-black font-mono leading-none text-primary tabular-nums">
+                          {stats?.bestWpm ?? "-"}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          Best WPM
+                        </span>
+                      </div>
+                      <div className={statTile}>
+                        <Target className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-2xl font-black font-mono leading-none text-primary tabular-nums">
+                          {stats?.avgAccuracy != null ? `${stats.avgAccuracy}%` : "-"}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          Avg Accuracy
+                        </span>
+                      </div>
+                      <div className={statTile}>
+                        <Medal className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-2xl font-black font-mono leading-none text-primary tabular-nums">
+                          {stats?.rank != null ? `#${stats.rank}` : "-"}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          Rank
+                        </span>
+                      </div>
+                    </div>
                 ) : (
                   <div className="border-2 border-foreground bg-card p-4 sm:p-6 shadow-brutal flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className="flex-1">
@@ -109,6 +174,66 @@ export default function LandingPage() {
                 Start Typing Test
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
+            </div>
+          </section>
+
+          {/* How It Works */}
+          <section aria-label="How it works">
+            <div className="px-4 sm:px-6 lg:px-16 py-10 sm:py-14 border-b-2 border-foreground">
+              <div className="flex flex-col gap-6 sm:gap-8">
+                <div className="flex items-center gap-3">
+                  <span className="border-2 border-foreground bg-foreground text-background px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                    Guide
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-foreground text-balance">
+                    How It Works
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    {
+                      icon: <Gamepad2 className="w-5 h-5" />,
+                      step: "01",
+                      title: "Play",
+                      body: "Pick a time limit and text mode, then hit the typing area.",
+                    },
+                    {
+                      icon: <Keyboard className="w-5 h-5" />,
+                      step: "02",
+                      title: "Type",
+                      body: "The timer starts on your first keystroke. Speed and accuracy count.",
+                    },
+                    {
+                      icon: <Trophy className="w-5 h-5" />,
+                      step: "03",
+                      title: "Track",
+                      body: "Save your score, unlock certificates, and climb the leaderboard.",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.step}
+                      className="border-2 border-foreground bg-card p-4 sm:p-5 shadow-brutal flex flex-col gap-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="bg-primary text-primary-foreground border-2 border-foreground p-2">
+                          {item.icon}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          {item.step}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <h4 className="text-lg font-black uppercase tracking-tight text-foreground">
+                          {item.title}
+                        </h4>
+                        <p className="text-sm text-muted-foreground leading-relaxed text-pretty">
+                          {item.body}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, Keyboard, Trophy, Medal, Gamepad2, Copy, Check, ExternalLink, LogIn, Lock } from "lucide-react"
+import { ArrowLeft, Keyboard, Trophy, Medal, Gamepad2, Copy, Check, ExternalLink, LogIn, Lock, LogOut } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/auth-provider"
 import { createClient } from "@/lib/supabase/client"
@@ -41,7 +41,7 @@ interface ProfileData {
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
 }
 
 export default function ProfilePage() {
@@ -91,8 +91,12 @@ export default function ProfilePage() {
   const handleSignIn = async (provider: "google" | "github") => {
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/profile")}` },
     })
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
   }
 
   // Not authenticated — show sign-in prompt
@@ -142,17 +146,34 @@ export default function ProfilePage() {
 
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 border-2 border-foreground bg-secondary text-foreground w-fit px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Home
+            </Link>
+            <button
+              onClick={handleSignOut}
+              className="inline-flex items-center gap-2 border-2 border-foreground bg-card text-foreground w-fit px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none hover:text-destructive transition-brutal cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
+
           {/* Player Name */}
           <div className="flex flex-col gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Player</span>
-            <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-foreground">
+            <h2 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-foreground break-words text-balance">
               {user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email ?? "User"}
             </h2>
           </div>
 
           {loading ? (
-            <div className="border-2 border-foreground bg-card px-6 py-4 shadow-brutal text-center">
-              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Loading profile...</p>
+            <div className="border-2 border-foreground bg-card px-6 py-4 shadow-brutal text-center" role="status">
+              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Loading profile…</p>
             </div>
           ) : (
             <>
@@ -218,16 +239,20 @@ export default function ProfilePage() {
                           </div>
                           {earned ? (
                             <div className="flex flex-col gap-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <code className="text-xs font-mono font-bold text-primary">{earned.id}</code>
+                              <div className="flex items-center gap-2">
+                                <code className="flex-1 min-w-0 text-xs font-mono font-bold text-primary break-all">{earned.id}</code>
                                 <button
                                   onClick={() => copyId(earned.id)}
-                                  className="border-2 border-foreground bg-secondary p-1 hover:bg-primary hover:text-primary-foreground transition-colors"
-                                  aria-label="Copy certificate ID"
+                                  className="shrink-0 border-2 border-foreground bg-secondary p-1 hover:bg-primary hover:text-primary-foreground transition-colors"
+                                  aria-label={`Copy certificate ID ${earned.id}`}
+                                  aria-pressed={copiedId === earned.id}
                                 >
                                   {copiedId === earned.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 </button>
                               </div>
+                              <span role="status" className="sr-only">
+                                {copiedId === earned.id ? "Certificate ID copied" : ""}
+                              </span>
                               <button
                                 onClick={() => router.push(`/certificate/${earned.id}`)}
                                 className="w-full inline-flex items-center justify-center gap-1.5 border-2 border-foreground bg-foreground text-background px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"

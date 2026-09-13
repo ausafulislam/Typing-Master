@@ -48,11 +48,13 @@ Exit criteria: a guest can complete a test, click "Save Result," sign in with Go
 ## Phase 3 — Account-Based Leaderboard
 Goal: replace name-based leaderboard with verified, account-linked entries.
 
-- [ ] New `typing_results` schema linked to `user_id`
+- [x] New `typing_results` schema linked to `user_id`
 - [ ] Server-side WPM/accuracy recomputation from raw keystroke data (never trust client number)
 - [ ] Basic anti-cheat: rate limit + impossible-score rejection
 - [ ] Leaderboard page: all-time + weekly, filter by duration (15s/30s/60s)
-- [ ] Legacy leaderboard data tagged "Legacy" and kept separate
+- [x] Legacy leaderboard data tagged "Legacy" and kept separate
+
+Status: partial. The board already runs on `typing_results` via a `public.leaderboard` view (best score per `user_id`, joined with `profiles.display_name`) — no legacy rows on it. Legacy `game_sessions` rows were deleted (table left empty/deprecated in `schema.sql`) rather than tagged. Remaining: server-side recomputation, rate limiting, weekly/duration filtering.
 
 Exit criteria: leaderboard only shows account-linked results; legacy data is preserved but visually separated; a fake/impossible score gets rejected.
 

@@ -15,18 +15,26 @@ export async function getLeaderboard(page = 1) {
   const to = Math.min(from + LEADERBOARD_PAGE_SIZE - 1, MAX_LEADERBOARD_ENTRIES - 1)
 
   try {
+    // Leaderboard shows the best score per authenticated user: the
+    // best-per-user view joins typing_results with the profile display name.
+    // Legacy game_sessions is no longer read.
     const { data, error, count } = await supabase
-      .from("game_sessions")
-      .select("name, wpm, accuracy", { count: "exact" })
+      .from("leaderboard")
+      .select("name, wpm, accuracy, errors", { count: "exact" })
       .order("wpm", { ascending: false })
       .order("accuracy", { ascending: false })
       .order("errors", { ascending: true })
-      .order("id", { ascending: false })
+      .order("achieved_at", { ascending: false })
       .range(from, to)
 
     if (error) throw error
 
-    const entries = (data ?? []) as { name: string; wpm: number; accuracy: number }[]
+    const entries = (data ?? []) as unknown as {
+      name: string
+      wpm: number
+      accuracy: number
+      errors: number
+    }[]
     const shownSoFar = from + entries.length
     const hasMore = count !== null ? shownSoFar < Math.min(count, MAX_LEADERBOARD_ENTRIES) : false
 
@@ -176,27 +184,6 @@ export async function syncLocalScores(scores: LocalScore[]) {
   }
 }
 
-export async function getUserProfile() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, display_name, avatar_url, created_at")
-      .eq("id", user.id)
-      .maybeSingle()
-
-    if (error) throw error
-    return data
-  } catch (error: unknown) {
-    console.error("Failed to fetch user profile:", error)
-    return null
-  }
-}
-
 export async function getUserBestResult() {
   const supabase = await createClient()
 
@@ -279,10 +266,11 @@ export async function getUserRank() {
     if (bestError) throw bestError
     if (!best) return null
 
-    // Count everyone strictly ahead
+    // Count every distinct user strictly ahead on the leaderboard view
+    // (best-per-user, display name present) so the rank matches the board.
     const { count: ahead, error: aheadError } = await supabase
-      .from("typing_results")
-      .select("id", { count: "exact", head: true })
+      .from("leaderboard")
+      .select("name", { count: "exact", head: true })
       .or(
         `wpm.gt.${best.wpm},and(wpm.eq.${best.wpm},accuracy.gt.${best.accuracy}),and(wpm.eq.${best.wpm},accuracy.eq.${best.accuracy},errors.lt.${best.errors})`,
       )

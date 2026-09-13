@@ -3,15 +3,11 @@
 import { useSyncExternalStore } from "react"
 import { ArrowLeft, Download } from "lucide-react"
 import type { CertificateRecord } from "@/app/actions"
-import { CERTIFICATE_TIERS } from "@/lib/constants"
-
-function getTierConfig(tier: string) {
-  return CERTIFICATE_TIERS.find((t) => t.name === tier) ?? CERTIFICATE_TIERS[0]
-}
+import { getTierConfig } from "@/lib/constants"
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
 }
 
 const BLUE = "#1E56EA"
@@ -32,7 +28,7 @@ export function CertificateView({ cert }: { cert: CertificateRecord }) {
   return (
     <>
       {/* Toolbar - hidden when printing */}
-      <div className="no-print fixed top-0 left-0 right-0 z-50 bg-background border-b-2 border-foreground p-4 flex items-center justify-between">
+      <div className="no-print fixed top-0 left-0 right-0 z-50 bg-background border-b-2 border-foreground px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between gap-3">
         <button
           onClick={() => window.history.back()}
           className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-xs font-black uppercase tracking-widest px-3 py-1.5 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
@@ -133,7 +129,7 @@ export function CertificateView({ cert }: { cert: CertificateRecord }) {
                 <div className="w-full h-0.5 mt-6 sm:mb-8" style={{ backgroundColor: BLUE }} />
 
                 {/* Footer */}
-                <div className="flex items-end justify-between mt-4 sm:mt-6">
+                <div className="flex flex-wrap items-end justify-center gap-6 sm:justify-between mt-4 sm:mt-6">
                   {/* Signature */}
                   <div className="flex flex-col items-center gap-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}

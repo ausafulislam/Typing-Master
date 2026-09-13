@@ -19,20 +19,70 @@ After finishing a task or phase step:
 
 ## Current Status
 
-**Active phase:** Phase 2 — Authentication (OAuth only) — implemented, committed at v0.9.0
-**Last updated:** 2026-09-10
-**Next task:** Enable Google + GitHub OAuth providers in the Supabase dashboard (set the `/auth/callback` redirect URL), then do the real-device mobile check and confirm the dark theme visually.
+**Active phase:** Phase 2 complete (v0.9.0) + Phase 3 partial — leaderboard is now account-based (`leaderboard` view over `typing_results` + `profiles`); edge-case + UI polish rounds (v0.10.0/v0.11.0) and a dead-code/doc-cleanup round (v0.11.1) all uncommitted in one working tree.
+**Last updated:** 2026-09-13
+**Next task:** Final verification (tsc + lint + build), prod smoke test, then commit the combined working tree.
 
 ---
 
 ## Log
+
+### 2026-09-13 — Dead code + doc cleanup, leaderboard rank consistency (v0.11.1)
+**Phase:** Phase 3 partial (cleanup)
+**Done:**
+- **Removed unused code:** `generateCertificateId` from `lib/constants.ts` (cert IDs are now minted by the DB trigger in `schema.sql` §8); deleted `components/ui/input.tsx` (no imports anywhere); removed unused `getUserProfile` server action from `app/actions.ts`.
+- **Deduplicated tier lookup:** added `getTierConfig(tier)` to `lib/constants.ts` (single source of truth) and switched `components/certificate-view.tsx` + `app/verify/page.tsx` to it (removes 3 near-identical local `CERTIFICATE_TIERS.find` helpers).
+- **Leaderboard rank fix:** `getUserRank` previously counted strictly-ahead **rows** in `typing_results`, inflating rank for people who played many games and including users with no display name. Now counts distinct users via the `leaderboard` view, so the/profile homepage rank matches the board.
+- **Docs synced to current reality:** `README.md` (account schema, leaderboard view, cert trigger, real folder structure/no `name-utils.ts`, OAuth setup steps), `docs/Architecture.md` (real folder tree, drop Recharts, honest §4 data-flow noting no server-side recompute yet, `proxy.ts` naming), `docs/Phases.md` (checked off the account-based leaderboard items delivered), `docs/Memory.md` (this entry + stale Known Issues).
+- Version bumped 0.11.0 → 0.11.1 (`package.json` + `lib/constants.ts`).
+
+**Deviations from plan:** No new features; the `getUserRank` fix is the one behavior change (bug fix from the v0.11 leaderboard migration).
+
+**Next:** Run tsc/lint/build, smoke-test prod, then commit the whole uncommitted round (v0.10.0 → v0.11.1).
+
+### 2026-09-11 — Full UI/UX + responsiveness pass (v0.11.0)
+
+### 2026-09-11 — Full UI/UX + responsiveness pass (v0.11.0)
+**Phase:** Phase 2 (polish)
+**Done:**
+- Audited every page/component against the Vercel Web Interface Guidelines and improved UX/responsiveness while keeping the neubrutalist design system (Design.md).
+- **Navbar:** now `sticky top-0`, keeps Home/Play/Profile/Verify always visible with active-tab pressed styling, wraps instead of hiding on small screens; Footer gained a real nav (Home / Play / Verify).
+- **Homepage:** added a 3-step "How It Works" strip (Play → Type → Track), `text-balance` headlines, `text-pretty` body copy.
+- **Game:** progress bar is a real `role="progressbar"` with ARIA values, timer has `role="timer"` + label, visual keyboard marked `aria-hidden` (decorative), controls stay wrapped on mobile.
+- **Profile:** added back-to-home link, locale-aware dates (`toLocaleDateString(undefined, ...)`), certificate ID wraps safely (`break-all min-w-0`) with copy-button `aria-live` feedback, loading text uses `…`.
+- **Verify:** removed mobile-hostile `autoFocus`, added `name`/`inputMode`/`enterKeyHint` on the ID input, result cards announce via `role="status" aria-live="polite"`.
+- **Leaderboard:** scroll container got `overscroll-contain`, pagination/retry buttons switched from `transition-all` → `transition-brutal`, loading text is `…` with `role="status"`.
+- **Dialog component:** content now `max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain` (small screens scroll instead of clipping).
+- **Certificate view:** toolbar respects `env(safe-area-inset-top)`, footer signature/id/verify blocks wrap on mobile instead of overflowing.
+- UI strings use `…` instead of `...`; all headings get `text-balance`; unused `ui/input.tsx` was deleted in the 2026-09-13 cleanup round.
+
+**Deviations from plan:** None — polish only, no design-system changes, no new dependencies.
+
+**Note on working tree:** the v0.10.0 edge-case round (sync retry, space-bar bug, corrupt-JSON guard, GitHub sign-in, open-redirect guard, hero stats) AND this v0.11.0 UI pass are both uncommitted in one working tree. Version now reads 0.11.0.
+
+**Next:** Commit the combined round; real-device visual pass; dashboard OAuth redirect check.
+
+### 2026-09-11 — Edge-case fixes + security hardening + navbar/hero polish (v0.10.0)
+**Phase:** Phase 2 (hardening/polish)
+**Done:**
+- **DB security fix (the real gap):** earlier hardening only revoked legacy RPCs `from public`. New migration `revoke_legacy_rpcs_and_award_certs_on_save` also revokes `submit_game_session` and `award_certificate` from `anon` and `authenticated`, and replaces the legacy name-based `award_certificate` RPC with a DB trigger: `award_certificates_on_result()` (SECURITY DEFINER, no grants) fires AFTER INSERT on `typing_results` and auto-awards a certificate per tier (bronze/silver/gold/diamond) keyed to the profile's `display_name`. Verified live: synthetic 105/96 result produced gold + diamond certs instantly; test artifacts then deleted. Only remaining advisor WARN is `auth_leaked_password_protection` (dashboard-level; irrelevant for OAuth-only).
+- `supabase/schema.sql` synced: revokes now target `public, anon, authenticated`, plus section 8 with the award-cert trigger SQL.
+- **Sync retry fixed** (`components/score-syncer.tsx`): flag set only after a successful sync (retries on next load instead of abandoning), reset on sign-out so a guest→login replay in the same session syncs again, corrupt JSON clears the key.
+- **Game fixes** (`app/game/page.tsx`): space/Enter on a focused button no longer types a char into the test; guest save validates corrupt JSON and caps local list at the latest 50 (matches server sync limit); Save button is disabled while auth is loading (kills the "Save Locally" vs "Save Score" flash); dialog sign-in now offers Google AND GitHub and passes `next=/game` so the player lands back on the game.
+- **Open-redirect guard** (`app/auth/callback/route.ts`): `next` must be a same-origin path (rejects `//...` and `\`); profile passes `next=/profile`.
+- **Navbar rework** (`components/navbar.tsx`): Home/Play/Profile/Verify are always visible (no more hiding the current page), active tab gets a pressed-down `bg-foreground` style via `usePathname`, rows wrap on small screens instead of hiding; AuthButton labels (Google/GitHub/name) always shown.
+- **Homepage hero** (`app/page.tsx`): signed-in users see live stat tiles pulled from the DB (tests, best WPM, avg accuracy, rank); guests keep the Google/GitHub sign-in prompt.
+
+**Deviations from plan:** None (all fixes were already documented as Known Issues / non-blockers in the previous round).
+
+**Next:** Commit v0.10.0; real-device visual pass on navbar wrapping + hero tiles; confirm OAuth redirect URLs in the dashboard.
 
 ### 2026-09-10 — Phase 2 authentication (v0.9.0)
 **Phase:** Phase 2
 **Done:**
 - Removed the name dialog entirely — clicking Play goes straight to typing. Designed a 3-step flow: (1) Play → type; (2) autosave; (3) if user is not signed in, score stores in `localStorage` (`tmx-unsynced-scores`); if signed in through Google/GitHub, it syncs to `typing_results` in Supabase and syncs to the database.
 - New account-based schema: `profiles` + `typing_results` tables with RLS; `handle_new_user()` trigger auto-creates a profile on first login.
-- New auth files: `lib/supabase/client.ts`, `middleware.ts` (session refresh). Auth UI: `components/auth-provider.tsx` (useAuth/AuthProvider), `auth-button.tsx` (Google + GitHub buttons, avatar + sign out), `components/score-syncer.tsx` (login → sync previous guest scores → clear key). `app/auth/callback/route.ts` + `app/auth/auth-code-error/page.tsx` handle the OAuth return trip; navbar now shows avatar/username or Sign in.
+- New auth files: `lib/supabase/client.ts`, `proxy.ts` (session refresh middleware). Auth UI: `components/auth-provider.tsx` (useAuth/AuthProvider), `auth-button.tsx` (Google + GitHub buttons, avatar + sign out), `components/score-syncer.tsx` (login → sync previous guest scores → clear key). `app/auth/callback/route.ts` + `app/auth/auth-code-error/page.tsx` handle the OAuth return trip; navbar now shows avatar/username or Sign in.
 - Homepage rewritten: no name dialog, "Start Typing Test" goes straight to `/game`, guest sees "Sign in" prompt, signed-in users see their stats. Game page rewritten: removes all name/nickname code, saves via `saveTypedResult` (signed in) or `localStorage` (guest), "Save Locally" unsaved scores button, sign-in link.
 - Profile page rewritten: guests blocked behind a blur overlay + "Sign In Required" prompt with sign-in buttons; all stats/ranks/history load from the DB.
 - `app/actions.ts` rewritten: removed obsolete legacy actions (`saveGameSession`, `checkNameExists`, `getPlayerStats`, `awardCertificates`, `getPlayerCertificates`, `getPlayerGameHistory`), added 8 new account actions.
@@ -83,11 +133,11 @@ After finishing a task or phase step:
 
 ## Known Issues / Tech Debt
 
-- Leaderboard uses legacy name-based schema (`game_sessions`), will be migrated to account-based in Phase 3.
-- Legacy certificate system (bronze/silver/gold/diamond + `/verify` + `/certificate/[id]`) predates the PRD; kept functional but not part of any active phase. Revisit in Phase 5/6. Phase 2 now auth-gates the certificate display on the profile (blur box) so they are no longer visible to guests.
-- `submit_game_session` trusts client-computed WPM/accuracy (range-validates only). Server-side recomputation from raw keystrokes lands in Phase 3.
+- Legacy `game_sessions` / `game_history` tables (name-based, pre-Phase-2) are still created in `supabase/schema.sql` but are **empty and unread** — the leaderboard now serves the account-based `leaderboard` view (best result per `typing_results` user, joined with `profiles.display_name`). Safe to drop from the schema later.
+- Certificate system (bronze/silver/gold/diamond + `/verify` + `/certificate/[id]`) predates the PRD; still functional and now auto-awarded by DB trigger, but certificates are keyed to the profile `display_name` (which the user can't currently change). Profile removes the guest blur → signed-in users see their certs.
+- `saveTypedResult` trusts client-computed WPM/accuracy (range-validates only). Server-side recomputation from raw keystrokes + rate limiting lands in Phase 3.
 - `integer` `wpm` values still land in `typing_results` — decimals are dropped by the DB. Fine for now; Phase 3 recomputation may revisit.
-- OAuth provider config (Google + GitHub `redirectTo` URLs → `/auth/callback`) must be done manually in the Supabase dashboard; not scriptable from here.
+- OAuth provider config (Google + GitHub `redirectTo` URLs → `/auth/callback`) was set up in the Supabase dashboard by the user; keep an eye on it if URLs change.
 
 ---
 
@@ -98,4 +148,4 @@ After finishing a task or phase step:
 - Touch devices were previously hard-blocked with a "Keyboard Required" gate; replaced with a hidden-input capture approach so mobile users can actually play (Phase 1 requirement).
 - Dark palette uses softened tones (foreground `#e8e8ec`, borders `#a1a1aa`, surfaces `#0a0a0a`/`#16161a`/`#232329`) to avoid the glare issues of pure-white borders/shadows on near-black backgrounds.
 - Phase 2 is local-first: guests never enter a name; scores persist in `localStorage` (`tmx-unsynced-scores`) and auto-sync to `typing_results` the moment the user signs in. This satisfies the user spec (Play → top → autosave → optional sign-in) rather than the original name-dialog flow.
-- No new dependencies for auth: `@supabase/supabase-js` + `@supabase/ssr` (already present) power session handling, middleware, and server actions.
+- No new dependencies for auth: `@supabase/supabase-js` + `@supabase/ssr` (already present) power session handling, proxy middleware, and server actions.

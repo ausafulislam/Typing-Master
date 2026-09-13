@@ -9,7 +9,7 @@ export default function AuthCodeErrorPage() {
           <Keyboard className="w-10 h-10" />
         </div>
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-black uppercase tracking-tight text-foreground">
+          <h1 className="text-3xl font-black uppercase tracking-tight text-foreground text-balance">
             Sign-in Failed
           </h1>
           <p className="text-muted-foreground font-medium leading-relaxed">

@@ -103,7 +103,7 @@ export function Leaderboard() {
         </div>
 
         {/* Content */}
-        <div className="max-h-[420px] overflow-y-auto custom-scrollbar">
+        <div className="max-h-[420px] overflow-y-auto overscroll-contain custom-scrollbar">
           {/* Desktop Table */}
           <table className="w-full hidden sm:table" aria-label="Leaderboard rankings">
             <caption className="sr-only">Leaderboard rankings showing top typists by WPM and accuracy</caption>
@@ -126,8 +126,8 @@ export function Leaderboard() {
             <tbody aria-busy={loading} className="divide-y-2 divide-foreground/10">
               {isLoading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center font-bold uppercase text-muted-foreground text-sm">
-                    Loading leaderboard...
+                  <td colSpan={4} role="status" className="px-4 py-10 text-center font-bold uppercase text-muted-foreground text-sm">
+                    Loading leaderboard…
                   </td>
                 </tr>
               ) : loadError ? (
@@ -136,7 +136,7 @@ export function Leaderboard() {
                     <p className="font-bold uppercase text-destructive text-sm mb-3">Failed to load</p>
                     <button
                       onClick={() => fetchPage(currentPage)}
-                      className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+                      className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       Retry
@@ -176,15 +176,15 @@ export function Leaderboard() {
           {/* Mobile Cards */}
           <div className="sm:hidden divide-y-2 divide-foreground/10" role="list" aria-label="Leaderboard rankings">
             {isLoading ? (
-              <div className="px-4 py-10 text-center font-bold uppercase text-muted-foreground text-sm">
-                Loading leaderboard...
+              <div role="status" className="px-4 py-10 text-center font-bold uppercase text-muted-foreground text-sm">
+                Loading leaderboard…
               </div>
             ) : loadError ? (
               <div className="px-4 py-10 text-center">
                 <p className="font-bold uppercase text-destructive text-sm mb-3">Failed to load</p>
                 <button
                   onClick={() => fetchPage(currentPage)}
-                  className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+                  className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card px-3 py-1.5 text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   Retry
@@ -225,18 +225,18 @@ export function Leaderboard() {
           <button
             onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage <= 1 || loading}
-            className="inline-flex items-center gap-1 border-2 border-foreground bg-card px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
+            className="inline-flex items-center gap-1 border-2 border-foreground bg-card px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             Prev
           </button>
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground">
-            {loading ? "..." : `Page ${currentPage}`}
+            {loading ? "…" : `Page ${currentPage}`}
           </p>
           <button
             onClick={() => goToPage(currentPage + 1)}
             disabled={!hasMore || loading}
-            className="inline-flex items-center gap-1 border-2 border-foreground bg-card px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
+            className="inline-flex items-center gap-1 border-2 border-foreground bg-card px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal disabled:opacity-40 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-brutal"
           >
             Next
             <ChevronRight className="w-3.5 h-3.5" />

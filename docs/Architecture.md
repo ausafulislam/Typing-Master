@@ -11,7 +11,6 @@
 | Components | shadcn/ui (Radix primitives) |
 | Backend / DB | Supabase (Postgres + Auth) |
 | Auth | Supabase Auth — Google OAuth + GitHub OAuth only |
-| Charts | Recharts |
 | Icons | lucide-react |
 | Hosting | Vercel |
 | Analytics | Vercel Analytics |
@@ -32,13 +31,13 @@ Next.js App (App Router)
   │        → all typing logic runs LOCALLY, no network calls per keystroke
   │
   ├── Server Actions (app/actions.ts)
-  │        → result submission, leaderboard queries, profile updates
+  │        → result submission, local-score sync, leaderboard, rank, certificates
   │        → only place that talks to Supabase for writes
   │
   └── Supabase
-        ├── Auth (Google/GitHub OAuth, session cookies via @supabase/ssr)
-        ├── Postgres (profiles, typing_results)
-        └── RLS policies (per-user row access)
+        ├── Auth (Google/GitHub OAuth, session cookies via @supabase/ssr, refreshed by proxy.ts)
+        ├── Postgres (profiles, typing_results, certificates, leaderboard view)
+        └── RLS policies (per-user row access) + triggers (profile auto-create, cert auto-award)
 ```
 
 **Rule of thumb:** typing test = 100% client-side until the test ends. Only the final result is sent to the server, once.
@@ -50,51 +49,55 @@ Next.js App (App Router)
 ```
 Typing-Master/
 ├── app/
-│   ├── page.tsx                 # Homepage
+│   ├── page.tsx                 # Homepage (hero + stat tiles + leaderboard)
 │   ├── layout.tsx               # Root layout, theme provider
 │   ├── globals.css
-│   ├── actions.ts                # Server actions (submit result, fetch leaderboard)
+│   ├── actions.ts               # Server actions (save/sync result, leaderboard, rank, certs)
 │   ├── game/
-│   │   └── page.tsx              # Typing test page
-│   ├── leaderboard/
-│   │   └── page.tsx              # Full leaderboard page
+│   │   ├── page.tsx             # Whole typing engine lives here (no split components yet)
+│   │   ├── loading.tsx
+│   │   └── error.tsx
 │   ├── profile/
-│   │   └── page.tsx              # User profile + stats (auth required)
+│   │   └── page.tsx             # User profile + stats (auth required)
+│   ├── verify/
+│   │   └── page.tsx             # Certificate verification
+│   ├── certificate/
+│   │   └── [id]/page.tsx        # Shareable certificate view
 │   └── auth/
-│       └── callback/route.ts     # OAuth callback handler
+│       ├── callback/route.ts    # OAuth code exchange
+│       └── auth-code-error/page.tsx
 │
 ├── components/
-│   ├── ui/                       # shadcn/ui primitives (do not hand-edit)
-│   ├── typing-test.tsx           # Core typing engine component
-│   ├── stats-bar.tsx             # Live WPM/accuracy/timer display
-│   ├── result-card.tsx           # Post-test result screen
-│   ├── leaderboard-table.tsx
-│   ├── auth-button.tsx           # Google/GitHub sign-in buttons
+│   ├── ui/                      # shadcn/ui primitives (button, dialog — keep minimal)
+│   ├── navbar.tsx               # Responsive nav: desktop links + mobile sidebar drawer
+│   ├── leaderboard.tsx          # Paginated board, reads getLeaderboard() server action
+│   ├── auth-button.tsx          # Google/GitHub sign-in + avatar/sign-out
+│   ├── auth-provider.tsx        # useAuth session context (useSyncExternalStore)
+│   ├── score-syncer.tsx         # Syncs pending guest scores on sign-in
+│   ├── certificate-view.tsx     # Print/PDF certificate
+│   ├── footer.tsx
+│   ├── theme-provider.tsx       # Hand-rolled theme store (no next-themes)
 │   └── theme-toggle.tsx
 │
 ├── hooks/
-│   ├── use-typing-engine.ts      # Core typing state machine
-│   ├── use-mobile.ts
-│   └── use-toast.ts
+│   └── use-local-storage-state.ts   # useSyncExternalStore-backed localStorage
 │
 ├── lib/
 │   ├── supabase/
-│   │   ├── client.ts              # Browser Supabase client
-│   │   └── server.ts              # Server Supabase client (cookies-based)
-│   ├── wpm.ts                     # WPM/accuracy calculation (pure functions)
-│   ├── key-sound.ts
-│   └── utils.ts
+│   │   ├── client.ts            # Browser Supabase client (@supabase/ssr)
+│   │   └── server.ts            # Server Supabase client (cookies-based)
+│   ├── constants.ts             # Leaderboard caps, certificate tiers, getTierConfig, version
+│   ├── wpm.ts                   # WPM/accuracy/progress calculation (pure functions)
+│   ├── key-sound.ts             # Web Audio keyboard sounds
+│   └── utils.ts                 # cn() merge utility
 │
+├── supabase/
+│   └── schema.sql               # Idempotent schema: tables + RLS + view + triggers + grants
+├── proxy.ts                     # Session refresh middleware (@supabase/ssr)
 ├── public/
-├── styles/
-│
-├── PRD.md
-├── Architecture.md
-├── Rules.md
-├── Phases.md
-├── Design.md
-├── Memory.md
-└── README.md
+├── docs/                        # PRD, Architecture, Rules, Phases, Design, Memory
+├── README.md
+└── ...config files (next.config.mjs, tsconfig.json, postcss.config.mjs)
 ```
 
 ---
@@ -103,27 +106,30 @@ Typing-Master/
 
 ```
 1. User finishes test (client-side timer ends)
-2. Client has: raw keystroke log, correct/incorrect chars, duration, mode
-3. Client calls submitResult() server action with raw data (NOT final WPM)
+2. Client computes WPM/accuracy/errors via lib/wpm.ts from local keystroke state
+3. Client calls saveTypedResult() server action with the final numbers
 4. Server action:
-     a. Recomputes WPM + accuracy from raw data (never trusts client's number)
-     b. Checks rate limit (max 3 submissions/user/minute)
-     c. Rejects impossible results (WPM > 250)
-     d. Inserts into typing_results with user_id from session
-5. Client refetches leaderboard (revalidate or client refetch)
+     a. Requires an authenticated session (guest saves go to localStorage instead)
+     b. Range-validates server-side (wpm ≤ 400, accuracy ≤ 100, duration ≤ 300, etc.)
+     c. Inserts into typing_results under session user_id
+5. DB trigger award_certificates_on_result() auto-awards any qualifying certificate
+6. Client refetches leaderboard/rank (server action on next render)
 ```
+
+> Note: Phase 3 will replace step 3–4 with server-side recomputation from raw keystroke data + rate limiting. Today the server range-validates but trusts the client-computed numbers.
 
 ---
 
 ## 5. Auth Flow
 
 ```
-1. Guest clicks "Save Result"
-2. supabase.auth.signInWithOAuth({ provider: 'google' | 'github' })
-3. Redirect to provider → back to /auth/callback
-4. Callback exchanges code for session (Supabase handles this)
-5. profiles row auto-created on first login (DB trigger or first-write-check)
-6. Redirect back to result screen, auto-submit the pending result
+1. Guest clicks "Sign in" / "Save Score" → AuthButton opens sign-in dialog
+2. supabase.auth.signInWithOAuth({ provider: 'google' | 'github', options: { redirectTo: '/auth/callback?next=...' } })
+3. Provider → back to /auth/callback (open-redirect-guarded `next` param)
+4. Callback exchanges code for session, redirects to `next`
+5. profile row auto-created by handle_new_user() trigger on auth.users insert
+6. /profile passes next=/profile; host passes next=/game
+7. score-syncer pushes any pending localStorage scores (tmx-unsynced-scores) on sign-in
 ```
 
 ---
@@ -131,9 +137,10 @@ Typing-Master/
 ## 6. State Management
 
 - No global state library (Redux/Zustand) needed at MVP scale.
-- Typing engine state: local `useState`/`useReducer` inside `use-typing-engine.ts`.
-- Auth/session state: read via Supabase server client in Server Components; client-side via `@supabase/ssr` browser client where needed (e.g. showing "logged in as X" in nav).
-- Leaderboard data: fetched via Server Component (SSR) on page load, optionally revalidated client-side after a save.
+- Typing engine state: local hooks inside `app/game/page.tsx`.
+- Auth/session state: `components/auth-provider.tsx` (useSyncExternalStore against supabase client session/channel) + server client in Server Components.
+- Theme state: external store in `components/theme-provider.tsx`, key `tmx-theme`.
+- Leaderboard/profile data: fetched via server actions in Server Components (`app/actions.ts`), client components re-run them after saves.
 
 ---
 

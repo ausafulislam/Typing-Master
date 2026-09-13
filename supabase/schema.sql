@@ -169,8 +169,7 @@ begin
 end;
 $$;
 
-revoke all on function public.submit_game_session(text, integer, integer, numeric, integer, text) from public;
-grant execute on function public.submit_game_session(text, integer, integer, numeric, integer, text) to anon, authenticated;
+revoke all on function public.submit_game_session(text, integer, integer, numeric, integer, text) from public, anon, authenticated;
 
 -- ============================================================
 -- 5. award_certificate — validated certificate issuance
@@ -225,8 +224,7 @@ begin
 end;
 $$;
 
-revoke all on function public.award_certificate(text, text, text, integer, numeric) from public;
-grant execute on function public.award_certificate(text, text, text, integer, numeric) to anon, authenticated;
+revoke all on function public.award_certificate(text, text, text, integer, numeric) from public, anon, authenticated;
 
 -- ============================================================
 -- 6. Cleanup note for legacy duplicate certificates (run once if needed):
@@ -299,6 +297,26 @@ drop policy if exists "Public can read results for leaderboard" on public.typing
 create policy "Public can read results for leaderboard" on public.typing_results
   for select using (true);
 
+-- Leaderboard: best score per authenticated user (best WPM, then accuracy,
+-- then fewest errors), joined with the profile display name.
+drop view if exists public.leaderboard cascade;
+create view public.leaderboard
+with (security_invoker = true)
+as
+select distinct on (tr.user_id)
+  tr.user_id,
+  p.display_name as name,
+  tr.wpm,
+  tr.accuracy,
+  tr.errors,
+  tr.created_at as achieved_at
+from public.typing_results tr
+join public.profiles p on p.id = tr.user_id
+where p.display_name is not null and p.display_name <> ''
+order by tr.user_id, tr.wpm desc, tr.accuracy desc, tr.errors asc;
+
+grant select on public.leaderboard to anon, authenticated;
+
 -- Auto-create profile on first login
 create or replace function public.handle_new_user()
 returns trigger
@@ -333,5 +351,78 @@ $$;
 -- Phase 2 hardening: trigger function is never exposed via RPC, and the
 -- legacy name-based RPCs are no longer called by the app.
 revoke all on function public.handle_new_user() from public, anon, authenticated;
-revoke all on function public.submit_game_session(text, integer, integer, numeric, integer, text) from public;
-revoke all on function public.award_certificate(text, text, text, integer, numeric) from public;
+
+-- ============================================================
+-- 8. Auto-award certificates when a qualifying result is saved.
+-- Runs as a DB trigger so there is no RPC door and no self-award path.
+-- Cert accounts are keyed to the profile's display_name.
+-- ============================================================
+create or replace function public.award_certificates_on_result()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_display_name text;
+  v_tier text;
+  v_prefix text;
+  v_min_wpm integer;
+  v_min_accuracy numeric;
+  v_cert_id text;
+  v_inserted boolean := false;
+  v_attempt integer := 0;
+begin
+  -- Skip results that cannot clear the lowest tier
+  if new.wpm < 40 or new.accuracy < 80 then
+    return new;
+  end if;
+
+  select display_name into v_display_name
+  from public.profiles
+  where id = new.user_id;
+
+  if v_display_name is null or v_display_name = '' then
+    return new;
+  end if;
+
+  for v_tier, v_prefix, v_min_wpm, v_min_accuracy in
+    values ('bronze', 'B', 40, 80::numeric),
+           ('silver', 'S', 60, 85::numeric),
+           ('gold',   'G', 80, 90::numeric),
+           ('diamond','D', 100, 95::numeric)
+  loop
+    if new.wpm >= v_min_wpm and new.accuracy >= v_min_accuracy then
+      continue when exists (
+        select 1 from public.certificates c
+        where c.name = v_display_name and c.tier = v_tier
+      );
+
+      v_inserted := false;
+      v_attempt := 0;
+      while not v_inserted and v_attempt < 5 loop
+        v_attempt := v_attempt + 1;
+        v_cert_id := 'TYM' || v_prefix || '.' ||
+                     upper(substr(md5(random()::text), 1, 3)) || '.' ||
+                     upper(substr(md5(random()::text), 1, 4));
+        begin
+          insert into public.certificates (id, name, tier, wpm, accuracy)
+          values (v_cert_id, v_display_name, v_tier, new.wpm, new.accuracy);
+          v_inserted := true;
+        exception when unique_violation then
+          null;
+        end;
+      end loop;
+    end if;
+  end loop;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.award_certificates_on_result() from public, anon, authenticated;
+
+drop trigger if exists trg_award_certificates_on_result on public.typing_results;
+create trigger trg_award_certificates_on_result
+after insert on public.typing_results
+for each row execute function public.award_certificates_on_result();

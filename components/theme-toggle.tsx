@@ -14,7 +14,7 @@ const LABELS: Record<Theme, string> = {
 
 const emptySubscribe = () => () => {}
 
-export function ThemeToggle() {
+export function ThemeToggle({ className = "" }: { className?: string }) {
   const theme = useTheme()
   // False during SSR/hydration so the label matches server HTML; true after.
   const mounted = useSyncExternalStore(
@@ -30,12 +30,11 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={() => setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])}
-      aria-label={LABELS[current]}
+      aria-label={`${LABELS[current]}, click to change`}
       title={LABELS[current]}
-      className="inline-flex items-center gap-1.5 border-2 border-foreground bg-card text-foreground text-[10px] sm:text-xs font-black uppercase tracking-widest px-2.5 sm:px-3 py-1.5 sm:py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal"
+      className={`inline-flex items-center justify-center border-2 border-foreground bg-card text-foreground px-2 sm:px-3 py-2 shadow-brutal hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-brutal ${className}`}
     >
       <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      <span className="hidden md:inline">{current}</span>
     </button>
   )
 }
