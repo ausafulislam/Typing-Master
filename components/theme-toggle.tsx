@@ -23,7 +23,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     () => false,
   )
 
-  const current: Theme = mounted ? theme : "system"
+  const current: Theme = mounted ? theme : "light"
   const Icon = current === "light" ? Sun : current === "dark" ? Moon : Monitor
 
   return (

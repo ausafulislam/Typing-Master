@@ -14,9 +14,9 @@ function readStoredTheme(): Theme {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored === "light" || stored === "dark" || stored === "system") return stored
   } catch {
-    // Storage unavailable — fall through to system default
+    // Storage unavailable — fall through to light default
   }
-  return "system"
+  return "light"
 }
 
 function getSnapshot(): Theme {
@@ -25,7 +25,7 @@ function getSnapshot(): Theme {
 }
 
 function getServerSnapshot(): Theme {
-  return "system"
+  return "light"
 }
 
 function subscribe(onStoreChange: () => void): () => void {

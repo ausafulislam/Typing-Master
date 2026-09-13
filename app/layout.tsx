@@ -10,7 +10,7 @@ import { ScoreSyncer } from "@/components/score-syncer"
 import "./globals.css"
 
 // Runs before first paint so the correct theme class is present at hydration.
-const themeInitScript = `(function(){try{var t=localStorage.getItem("tmx-theme");var d=t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(d)document.documentElement.classList.add("dark")}catch(e){}})()`
+const themeInitScript = `(function(){try{var t=localStorage.getItem("tmx-theme");var d=t==="dark";if(d)document.documentElement.classList.add("dark")}catch(e){}})()`
 
 const geistSans = Geist({
   subsets: ["latin"],
