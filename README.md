@@ -1,7 +1,7 @@
 # TypeMaster — Brutalist Typing Challenge
 
 <p align="center">
-  <a href="https://typing-speed-challenge-gamma.vercel.app/">
+  <a href="https://typemaster-x.vercel.app/">
     <img src="https://img.shields.io/badge/🚀_Live_Demo-Play_Now-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo" />
   </a>
 </p>
